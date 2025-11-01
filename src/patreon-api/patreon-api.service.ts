@@ -1,28 +1,20 @@
 import { Injectable, Logger, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import {
-  // ARREGLO 1: Estos se usan como VALORES, no solo como tipos
   PatreonUserClient,
   PatreonOauthScope,
   QueryBuilder,
   PatreonUserClientInstance,
   Type,
-
-  // ARREGLO 1: Estos SÍ se usan solo como TIPOS
   type PatreonClientOptions,
   type Oauth2StoredToken,
-  // type PatreonQuery, // <-- ARREGLO 2: Ya no necesitamos este tipo
 } from 'patreon-api.ts';
-
-// ARREGLO 2: Eliminamos la definición de 'IdentityQuery' porque estaba causando el error
-// type IdentityQuery = ...
 
 @Injectable()
 export class PatreonApiService {
   private readonly logger = new Logger(PatreonApiService.name);
-
-  // Este es el cliente base V2
   private baseClient: PatreonUserClient;
+  private creatorToken: Oauth2StoredToken;
 
   constructor(private readonly configService: ConfigService) {
     const clientId = this.configService.get<string>('PATREON_CLIENT_ID')!;
@@ -35,7 +27,6 @@ export class PatreonApiService {
       throw new Error('Patreon client ID or secret not configured.');
     }
 
-    // Opciones del cliente V2
     const options: PatreonClientOptions = {
       oauth: {
         clientId: clientId,
@@ -45,17 +36,18 @@ export class PatreonApiService {
           PatreonOauthScope.Identity,
           PatreonOauthScope.IdentityEmail,
           PatreonOauthScope.IdentityMemberships,
+          'campaigns',
+          'campaigns.members',
         ],
       },
     };
     this.baseClient = new PatreonUserClient(options);
     this.logger.log('PatreonApiService (v2 client) initialized');
+    this.initializeCreatorToken();
   }
 
   /**
-   * Intercambia un código de autorización por un token de acceso.
-   * @param code El código recibido en el callback.
-   * @returns El token almacenado.
+   * Implementación de 4.2: Intercambio de Código por Tokens
    */
   async getTokens(code: string): Promise<Oauth2StoredToken> {
     try {
@@ -73,7 +65,7 @@ export class PatreonApiService {
   }
 
   /**
-   * Crea una instancia de cliente autenticada para un usuario específico.
+   * Crea una instancia del cliente de usuario con el token proporcionado
    */
   private createClientInstance(
     token: Oauth2StoredToken,
@@ -82,18 +74,16 @@ export class PatreonApiService {
   }
 
   /**
-   * Obtiene la identidad del usuario (datos y membresías)
-   * @param token El token del usuario.
+   * Implementación de 4.3: Llama a GET /identity
    */
   async getUserIdentity(token: Oauth2StoredToken) {
     const userClient = this.createClientInstance(token);
 
-    // Usamos el QueryBuilder, mucho más limpio
     const query = QueryBuilder.identity
       .addRelationships([
         'memberships',
         'memberships.currently_entitled_tiers',
-      ] as any) // <-- Mantenemos el 'as any' para la llamada
+      ] as any)
       .setAttributes({
         user: ['full_name', 'email'],
         member: [
@@ -101,11 +91,10 @@ export class PatreonApiService {
           'last_charge_date',
           'pledge_relationship_start',
         ],
-        tier: ['title', 'amount_cents'], // <-- DESCOMENTADO
+        tier: ['title', 'amount_cents'],
       });
 
     try {
-      // ARREGLO 3: Pasamos 'query' directamente sin el 'as IdentityQuery'
       const response = await userClient.fetchIdentity(query);
       return response;
     } catch (error) {
@@ -117,22 +106,145 @@ export class PatreonApiService {
   }
 
   /**
-   * (Placeholder) Lógica para verificar la suscripción de un usuario.
+   * Implementación de 4.4: Verificación de Suscripción del Usuario
    */
   async verifyUserSubscription(
     userId: string,
     refreshToken: string,
   ): Promise<boolean> {
-    this.logger.log(`Verifying subscription for user ${userId}...`);
+    this.logger.log(
+      `Verifying subscription for user ${userId} (via verifyUserSubscription)...`,
+    );
     try {
-      // Aquí iría la lógica de refrescar el token si es necesario
-      // y comprobar el 'patron_status' de la membresía
-      return true; // Placeholder
+      return await this.checkSubscriptionStatus(userId);
     } catch (error) {
       this.logger.error(
         `Failed to verify subscription for ${userId}: ${error.message}`,
       );
       return false;
+    }
+  }
+
+  /**
+   * Inicializa el token del creador desde las variables de entorno
+   */
+  private initializeCreatorToken() {
+    const creatorAccessToken = this.configService.get<string>(
+      'PATREON_CREATOR_ACCESS_TOKEN',
+    )!;
+    const creatorRefreshToken = this.configService.get<string>(
+      'PATREON_CREATOR_REFRESH_TOKEN',
+    )!;
+
+    if (!creatorAccessToken || !creatorRefreshToken) {
+      throw new Error(
+        'Patreon creator access token or refresh token not configured.',
+      );
+    }
+
+    this.creatorToken = {
+      access_token: creatorAccessToken,
+      refresh_token: creatorRefreshToken,
+      expires_at: new Date(0).toISOString(),
+      scope: 'campaigns campaigns.members',
+      token_type: 'Bearer',
+      expires_in: '0',
+      expires_in_epoch: '0',
+    };
+  }
+
+  /**
+   * Obtiene un cliente de creador válido, refrescando el token si es necesario
+   */
+  private async getValidCreatorClient(): Promise<PatreonUserClientInstance> {
+    const now = new Date();
+    const expiresAt = new Date(this.creatorToken.expires_at);
+
+    if (expiresAt.getTime() - now.getTime() < 60000) {
+      this.logger.log(
+        'Creator token expired or nearing expiration. Refreshing...',
+      );
+      try {
+        const newStoredToken = await this.baseClient.oauth.refreshToken(
+          this.creatorToken.refresh_token,
+        );
+
+        if (!newStoredToken) {
+          throw new Error('Refresh token returned undefined');
+        }
+
+        this.creatorToken = newStoredToken;
+
+        this.logger.warn(
+          '¡Token de Creador Refrescado! Actualiza tu .env con estos valores para evitar fallos si el servidor reinicia:',
+        );
+        this.logger.warn(`NEW_ACCESS_TOKEN: ${newStoredToken.access_token}`);
+        this.logger.warn(`NEW_REFRESH_TOKEN: ${newStoredToken.refresh_token}`);
+      } catch (error) {
+        this.logger.error(
+          `¡FALLA CATASTRÓFICA! No se pudo refrescar el token del creador: ${error.message}`,
+        );
+        throw new UnauthorizedException(
+          'Failed to refresh Patreon creator token.',
+        );
+      }
+    }
+    return new PatreonUserClientInstance(this.baseClient, this.creatorToken);
+  }
+
+  /**
+   * Implementación de 5.3.b: Llama a GET /members/{userId}
+   */
+  async checkSubscriptionStatus(userId: string): Promise<boolean> {
+    this.logger.log(`[Cron] Checking subscription for user: ${userId}`);
+
+    try {
+      const creatorClient = await this.getValidCreatorClient();
+
+      const fields = {
+        member: ['patron_status'],
+      };
+      const response = await creatorClient.fetchMember(userId, fields as any);
+
+      const status = response.data.attributes.patron_status;
+      const isActive = status === 'active_patron';
+
+      if (!isActive) {
+        this.logger.warn(
+          `[Cron] User ${userId} is NO LONGER active. Status: ${status}`,
+        );
+      }
+      return isActive;
+    } catch (error) {
+      if ((error as any).response?.status === 404) {
+        this.logger.warn(
+          `[Cron] User ${userId} not found in campaign. Marking as inactive.`,
+        );
+        return false;
+      }
+      this.logger.error(
+        `[Cron] Error checking subscription for ${userId}: ${error.message}`,
+      );
+      return true;
+    }
+  }
+
+  /**
+   * Método de prueba para el cron job (Versión A de TasksService)
+   */
+  async handleCronSubscriptionCheck(): Promise<void> {
+    this.logger.log(
+      '[Cron Job] Iniciando verificación de suscripciones en segundo plano...',
+    );
+    try {
+      await this.getValidCreatorClient();
+      this.logger.log(
+        '[Cron Job] Lógica de verificación (usando token de creador) completada.',
+      );
+    } catch (error) {
+      this.logger.error(
+        `[Cron Job] Error durante la verificación: ${error.message}`,
+      );
     }
   }
 }
