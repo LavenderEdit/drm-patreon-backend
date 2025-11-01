@@ -20,6 +20,7 @@ import { PatreonApiModule } from '../patreon-api/patreon-api.module';
     }),
   ],
   controllers: [AuthController],
-  providers: [AuthService]
+  providers: [AuthService],
+  exports: [JwtModule, AuthService],
 })
-export class AuthModule {}
+export class AuthModule { }
