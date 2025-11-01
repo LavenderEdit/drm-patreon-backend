@@ -1,4 +1,3 @@
-// src/auth/auth.controller.ts
 import { Controller, Get, Res, Req } from '@nestjs/common';
 import { type FastifyReply, FastifyRequest } from 'fastify';
 import { randomBytes } from 'crypto';
@@ -14,7 +13,6 @@ export class AuthController {
     const clientId = this.configService.get<string>('PATREON_CLIENT_ID');
     const redirectUri = this.configService.get<string>('PATREON_REDIRECT_URI');
 
-    // El scope incluye la identidad del usuario y sus membresías
     const scope = encodeURIComponent(
       'identity identity[email] identity.memberships',
     );
@@ -24,13 +22,12 @@ export class AuthController {
     reply
       .setCookie('patreon_oauth_state', state, {
         httpOnly: true,
-        secure: process.env.NODE_ENV === 'production', // Usar 'secure' en producción
+        secure: process.env.NODE_ENV === 'production',
         path: '/',
-        maxAge: 300, // 5 minutos
+        maxAge: 300,
         signed: true,
       })
-      .status(302) // <-- Establece el código de estado aquí
-      .redirect(patreonAuthUrl); // <-- Y aquí solo pasas la URL (string)
+      .status(302)
+      .redirect(patreonAuthUrl);
   }
-  //... otros métodos
 }
