@@ -1,98 +1,181 @@
 <p align="center">
-  <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="120" alt="Nest Logo" /></a>
+  <a href="https://studios-tkoh.azurewebsites.net/" target="_blank">
+    <img src="https://drive.google.com/uc?export=view&id=1TuT30CiBkinh85WuTvjKGKN47hCyCS0Z" width="300" alt="Studios TKOH Logo">
+  </a>
 </p>
 
-[circleci-image]: https://img.shields.io/circleci/build/github/nestjs/nest/master?token=abc123def456
-[circleci-url]: https://circleci.com/gh/nestjs/nest
+<h1 align="center">🎮 Servidor de Licencias Patreon</h1>
+<h3 align="center">Sistema DRM en tiempo real con NestJS, Fastify y WebSockets</h3>
 
-  <p align="center">A progressive <a href="http://nodejs.org" target="_blank">Node.js</a> framework for building efficient and scalable server-side applications.</p>
-    <p align="center">
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/v/@nestjs/core.svg" alt="NPM Version" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/l/@nestjs/core.svg" alt="Package License" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/dm/@nestjs/common.svg" alt="NPM Downloads" /></a>
-<a href="https://circleci.com/gh/nestjs/nest" target="_blank"><img src="https://img.shields.io/circleci/build/github/nestjs/nest/master" alt="CircleCI" /></a>
-<a href="https://discord.gg/G7Qnnhy" target="_blank"><img src="https://img.shields.io/badge/discord-online-brightgreen.svg" alt="Discord"/></a>
-<a href="https://opencollective.com/nest#backer" target="_blank"><img src="https://opencollective.com/nest/backers/badge.svg" alt="Backers on Open Collective" /></a>
-<a href="https://opencollective.com/nest#sponsor" target="_blank"><img src="https://opencollective.com/nest/sponsors/badge.svg" alt="Sponsors on Open Collective" /></a>
-  <a href="https://paypal.me/kamilmysliwiec" target="_blank"><img src="https://img.shields.io/badge/Donate-PayPal-ff3f59.svg" alt="Donate us"/></a>
-    <a href="https://opencollective.com/nest#sponsor"  target="_blank"><img src="https://img.shields.io/badge/Support%20us-Open%20Collective-41B883.svg" alt="Support us"></a>
-  <a href="https://twitter.com/nestframework" target="_blank"><img src="https://img.shields.io/twitter/follow/nestframework.svg?style=social&label=Follow" alt="Follow us on Twitter"></a>
+---
+
+## 🧠 Descripción General
+
+**Servidor de Licencias Patreon** es el backend oficial desarrollado por **Studios TKOH**, diseñado para gestionar licencias y validar suscripciones de usuarios de Patreon de manera **segura, automática y en tiempo real**.  
+Está optimizado para integrarse con **clientes de juegos (como GDevelop)**, usando una arquitectura robusta basada en **3 flujos principales**.
+
+---
+
+## 🏗️ Arquitectura de Flujos
+
+### 🔹 **Flujo 1 — Autenticación OAuth 2.0 (HTTP)**
+
+- Gestiona el **inicio de sesión con Patreon**.
+- Verifica el estado del usuario (`patron_status`) y sus niveles de membresía (`tiers`).
+- Genera un **JWT de corta duración (60s)** para iniciar la sesión WebSocket.
+
+---
+
+### 🔹 **Flujo 2 — Sesión Persistente (WebSocket)**
+
+- Usa un middleware `WsAuthMiddleware` para **autenticar el handshake** del socket mediante el JWT.
+- Rechaza conexiones no autenticadas → evita ataques de recursos.
+- Implementa **anti-compartición de sesiones**:  
+  ➜ Solo **una sesión activa** por usuario Patreon.
+
+---
+
+### 🔹 **Flujo 3 — Verificación en Segundo Plano (Cron Job)**
+
+- Ejecuta cada **15 minutos** una verificación del estado de todas las conexiones activas.
+- Usa el **Creator’s Access Token** para consultar la API de Patreon.
+- Desconecta automáticamente a usuarios con suscripción **inactiva o caducada**.
+- Refresca automáticamente el **Creator’s Access Token** para prevenir errores a largo plazo.
+
+---
+
+## ⚙️ Puesta en Marcha
+
+### 1️⃣ Instalación
+
+```bash
+npm install
+````
+
+---
+
+### 2️⃣ Configuración de Variables de Entorno
+
+Crea un archivo `.env` en la raíz del proyecto y copia el siguiente contenido:
+
+```ini
+# --- Configuración del Servidor ---
+PORT=3000
+COOKIE_SECRET=tu-secreto-muy-largo-y-aleatorio-para-cookies
+
+# --- Flujo 1: Autenticación de Usuario (OAuth) ---
+PATREON_CLIENT_ID=...tu_client_id_de_patreon...
+PATREON_CLIENT_SECRET=...tu_client_secret_de_patreon...
+PATREON_REDIRECT_URI=http://localhost:3000/auth/patreon/callback
+PATREON_REQUIRED_TIER_IDS=123456,789012
+
+# --- Flujo 2: Sesión de WebSocket (JWT) ---
+JWT_SECRET=tu-secreto-muy-largo-y-aleatorio-para-jwt
+JWT_WEBSOCKET_EXPIRATION_TIME=60
+
+# --- Flujo 3: Verificación de Creador (Cron Job) ---
+PATREON_CREATOR_ACCESS_TOKEN=...tu_creator_access_token...
+PATREON_CREATOR_REFRESH_TOKEN=...tu_creator_refresh_token...
+
+# --- Cliente (GDevelop) ---
+CLIENT_ERROR_URL=my-game://auth?error=true
+```
+
+📘 *Puedes obtener los valores necesarios desde tu [portal de desarrollador de Patreon](https://www.patreon.com/portal/registration/register-clients).*
+
+---
+
+### 3️⃣ Ejecución del Servidor
+
+```bash
+# Modo desarrollo (recarga automática)
+npm run start:dev
+
+# Modo producción
+npm run build
+npm run start:prod
+```
+
+---
+
+## 🔌 Contrato de API WebSocket
+
+**URL de conexión:**
+
+```
+ws://localhost:3000
+```
+
+### 🧩 Handshake de Conexión (Payload `auth`)
+
+El cliente debe enviar su JWT (del Flujo 1) al iniciar la conexión:
+
+```json
+{
+  "auth": {
+    "token": "ey... (el_jwt_de_60_segundos)"
+  }
+}
+```
+
+---
+
+### 📡 Eventos del Servidor → Cliente
+
+#### ✅ `'authorization'`
+
+**Descripción:** conexión exitosa.
+**Payload:**
+
+```json
+{ "status": "authorized", "access": "TituloDelTier" }
+```
+
+---
+
+#### ❌ `'error'`
+
+**Descripción:** sesión terminada o inválida.
+**Códigos posibles:**
+
+| Código | Mensaje                                       | Causa                                            |
+| :----: | :-------------------------------------------- | :----------------------------------------------- |
+| `4001` | `"New session initiated"`                     | Se detectó otra sesión activa del mismo usuario. |
+| `4002` | `"Subscription expired or no longer active."` | La suscripción del usuario ha expirado.          |
+
+---
+
+## 🧩 Tecnologías Utilizadas
+
+| Categoría     | Tecnologías                                                                                    |
+| ------------- | ---------------------------------------------------------------------------------------------- |
+| Backend       | [NestJS](https://nestjs.com/), [Fastify](https://fastify.io/), [Socket.IO](https://socket.io/) |
+| Autenticación | OAuth 2.0 (Patreon API), JWT                                                                   |
+| Gestión       | Cron Jobs, Refresh Tokens                                                                      |
+| Seguridad     | CSRF Cookies, Anti-session Sharing, Token Rotation                                             |
+
+---
+
+## 🧪 Integración con GDevelop
+
+El cliente del juego (hecho en GDevelop) puede conectarse directamente al servidor usando **eventos de red (GET/POST)** y **WebSocket**, permitiendo:
+
+* Validar licencias activas antes de iniciar el juego.
+* Recibir actualizaciones en tiempo real si una suscripción expira.
+* Implementar lógicas premium / paywall basadas en tiers de Patreon.
+
+---
+
+## 🧰 Futuras Mejoras
+
+* [ ] Panel de administración para visualizar usuarios conectados en tiempo real.
+* [ ] Implementar sistema de cache con Redis.
+* [ ] Logs estructurados con Winston o Pino.
+* [ ] Integración opcional con Discord OAuth.
+
+---
+
+<p align="center">
+  <sub>🛠️ Desarrollado con 💙 por <strong>Studios TKOH</strong></sub><br>
+  <a href="https://studios-tkoh.azurewebsites.net/" target="_blank">🌐 studios-tkoh.azurewebsites.net</a>
 </p>
-  <!--[![Backers on Open Collective](https://opencollective.com/nest/backers/badge.svg)](https://opencollective.com/nest#backer)
-  [![Sponsors on Open Collective](https://opencollective.com/nest/sponsors/badge.svg)](https://opencollective.com/nest#sponsor)-->
-
-## Description
-
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
-
-## Project setup
-
-```bash
-$ npm install
-```
-
-## Compile and run the project
-
-```bash
-# development
-$ npm run start
-
-# watch mode
-$ npm run start:dev
-
-# production mode
-$ npm run start:prod
-```
-
-## Run tests
-
-```bash
-# unit tests
-$ npm run test
-
-# e2e tests
-$ npm run test:e2e
-
-# test coverage
-$ npm run test:cov
-```
-
-## Deployment
-
-When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
-
-If you are looking for a cloud-based platform to deploy your NestJS application, check out [Mau](https://mau.nestjs.com), our official platform for deploying NestJS applications on AWS. Mau makes deployment straightforward and fast, requiring just a few simple steps:
-
-```bash
-$ npm install -g @nestjs/mau
-$ mau deploy
-```
-
-With Mau, you can deploy your application in just a few clicks, allowing you to focus on building features rather than managing infrastructure.
-
-## Resources
-
-Check out a few resources that may come in handy when working with NestJS:
-
-- Visit the [NestJS Documentation](https://docs.nestjs.com) to learn more about the framework.
-- For questions and support, please visit our [Discord channel](https://discord.gg/G7Qnnhy).
-- To dive deeper and get more hands-on experience, check out our official video [courses](https://courses.nestjs.com/).
-- Deploy your application to AWS with the help of [NestJS Mau](https://mau.nestjs.com) in just a few clicks.
-- Visualize your application graph and interact with the NestJS application in real-time using [NestJS Devtools](https://devtools.nestjs.com).
-- Need help with your project (part-time to full-time)? Check out our official [enterprise support](https://enterprise.nestjs.com).
-- To stay in the loop and get updates, follow us on [X](https://x.com/nestframework) and [LinkedIn](https://linkedin.com/company/nestjs).
-- Looking for a job, or have a job to offer? Check out our official [Jobs board](https://jobs.nestjs.com).
-
-## Support
-
-Nest is an MIT-licensed open source project. It can grow thanks to the sponsors and support by the amazing backers. If you'd like to join them, please [read more here](https://docs.nestjs.com/support).
-
-## Stay in touch
-
-- Author - [Kamil Myśliwiec](https://twitter.com/kammysliwiec)
-- Website - [https://nestjs.com](https://nestjs.com/)
-- Twitter - [@nestframework](https://twitter.com/nestframework)
-
-## License
-
-Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
