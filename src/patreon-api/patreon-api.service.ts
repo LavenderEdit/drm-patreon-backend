@@ -55,42 +55,83 @@ export class PatreonApiService {
   }
 
   /**
-   * Implementación de 4.2: Intercambio de Código por Tokens
-   */
+ * Implementación de 4.2: Intercambio de Código por Tokens
+ * Usa fetch directo en lugar de patreon-api.ts para evitar ERR_INVALID_URL
+ */
   async getTokens(code: string): Promise<Oauth2StoredToken> {
-    // --- MÁS DEPURACIÓN ---
-    this.logger.debug(
-      `[getTokens] Intentando intercambiar código: "${code.substring(0, 10)}..."`,
-    );
-    // --- FIN DE LA DEPURACIÓN ---
+    if (!code || code.trim().length === 0) {
+      throw new UnauthorizedException('Authorization code is required');
+    }
 
     try {
-      const storedToken = await this.baseClient.oauth.getOauthTokenFromCode(code);
-      if (!storedToken) {
-        // --- MÁS DEPURACIÓN ---
-        this.logger.error('[getTokens] fetchToken devolvió undefined.');
-        // --- FIN DE LA DEPURACIÓN ---
-        throw new Error('Failed to fetch token from code (token is undefined)');
+      this.logger.debug('[getTokens] Intercambiando código por token...');
+
+      const tokenUrl = 'https://www.patreon.com/api/oauth2/token';
+      const clientId = this.configService.get<string>('PATREON_CLIENT_ID');
+      const clientSecret = this.configService.get<string>(
+        'PATREON_CLIENT_SECRET',
+      );
+      const redirectUri = this.configService.get<string>('PATREON_REDIRECT_URI');
+
+      const body = new URLSearchParams({
+        code,
+        grant_type: 'authorization_code',
+        client_id: clientId!,
+        client_secret: clientSecret!,
+        redirect_uri: redirectUri!,
+      });
+
+      this.logger.debug(
+        `[getTokens] POST a ${tokenUrl} con redirect_uri: ${redirectUri}`,
+      );
+
+      const response = await fetch(tokenUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: body.toString(),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        this.logger.error('[getTokens] Error de Patreon:', {
+          status: response.status,
+          error: errorData,
+        });
+        throw new Error(
+          `Patreon API error (${response.status}): ${errorData.error}`,
+        );
       }
-      // --- MÁS DEPURACIÓN ---
-      this.logger.debug('[getTokens] Token obtenido exitosamente.');
-      // --- FIN DE LA DEPURACIÓN ---
+
+      const tokenData = await response.json();
+
+      const storedToken: Oauth2StoredToken = {
+        access_token: tokenData.access_token,
+        refresh_token: tokenData.refresh_token,
+        expires_at: new Date(
+          Date.now() + tokenData.expires_in * 1000,
+        ).toISOString(),
+        scope: tokenData.scope,
+        token_type: tokenData.token_type,
+        expires_in: tokenData.expires_in.toString(),
+        expires_in_epoch: Math.floor(
+          (Date.now() + tokenData.expires_in * 1000) / 1000,
+        ).toString(),
+      };
+
+      this.logger.log(
+        '[getTokens] Token obtenido exitosamente.',
+      );
       return storedToken;
     } catch (error) {
-      // --- MÁS DEPURACIÓN: ¡ESTO ES LO MÁS IMPORTANTE! ---
-      // Imprime el error COMPLETO, no solo el mensaje.
-      this.logger.error(
-        `[getTokens] Error COMPLETO al intercambiar: ${JSON.stringify(
-          error,
-          null,
-          2,
-        )}`,
-      );
-      // --- FIN DE LA DEPURACIÓN ---
+      this.logger.error('[getTokens] Error completo:', {
+        error: error instanceof Error ? error.message : String(error),
+        code: code.substring(0, 10) + '...',
+      });
 
-      this.logger.error(`Error in getTokens: ${error.message}`);
       throw new UnauthorizedException(
-        'Failed to exchange Patreon code for token.',
+        'Failed to exchange Patreon code for token',
       );
     }
   }
@@ -126,7 +167,13 @@ export class PatreonApiService {
       });
 
     try {
+      this.logger.debug('[getUserIdentity] Solicitando identidad con membresías...');
       const response = await userClient.fetchIdentity(query);
+      this.logger.debug('[getUserIdentity] Respuesta recibida:', {
+        hasIncluded: !!response.included,
+        includedLength: response.included?.length || 0,
+        includedTypes: response.included?.map((item: any) => item.type) || [],
+      });
       return response;
     } catch (error) {
       this.logger.error(`Error in getUserIdentity: ${error.message}`);
@@ -173,20 +220,23 @@ export class PatreonApiService {
       );
     }
 
+    const expiresIn = 2592000;
+    const expiresAt = new Date(Date.now() + expiresIn * 1000);
+
     this.creatorToken = {
       access_token: creatorAccessToken,
       refresh_token: creatorRefreshToken,
-      expires_at: new Date(0).toISOString(),
+      expires_at: expiresAt.toISOString(),
       scope: 'campaigns campaigns.members',
       token_type: 'Bearer',
-      expires_in: '0',
-      expires_in_epoch: '0',
+      expires_in: expiresIn.toString(),
+      expires_in_epoch: Math.floor(expiresAt.getTime() / 1000).toString(),
     };
   }
 
   /**
-   * Obtiene un cliente de creador válido, refrescando el token si es necesario
-   */
+ * Obtiene un cliente de creador válido, refrescando el token si es necesario
+ */
   private async getValidCreatorClient(): Promise<PatreonUserClientInstance> {
     const now = new Date();
     const expiresAt = new Date(this.creatorToken.expires_at);
@@ -195,32 +245,80 @@ export class PatreonApiService {
       this.logger.log(
         'Creator token expired or nearing expiration. Refreshing...',
       );
-      try {
-        const newStoredToken = await this.baseClient.oauth.refreshToken(
-          this.creatorToken.refresh_token,
-        );
+      await this.refreshCreatorToken();
+    }
 
-        if (!newStoredToken) {
-          throw new Error('Refresh token returned undefined');
-        }
+    return new PatreonUserClientInstance(this.baseClient, this.creatorToken);
+  }
 
-        this.creatorToken = newStoredToken;
+  /**
+   * Refresca el token del creador usando fetch directo
+   */
+  private async refreshCreatorToken(): Promise<void> {
+    try {
+      const tokenUrl = 'https://www.patreon.com/api/oauth2/token';
+      const clientId = this.configService.get<string>('PATREON_CLIENT_ID');
+      const clientSecret = this.configService.get<string>(
+        'PATREON_CLIENT_SECRET',
+      );
 
-        this.logger.warn(
-          '¡Token de Creador Refrescado! Actualiza tu .env con estos valores para evitar fallos si el servidor reinicia:',
-        );
-        this.logger.warn(`NEW_ACCESS_TOKEN: ${newStoredToken.access_token}`);
-        this.logger.warn(`NEW_REFRESH_TOKEN: ${newStoredToken.refresh_token}`);
-      } catch (error) {
-        this.logger.error(
-          `¡FALLA CATASTRÓFICA! No se pudo refrescar el token del creador: ${error.message}`,
-        );
-        throw new UnauthorizedException(
-          'Failed to refresh Patreon creator token.',
+      const body = new URLSearchParams({
+        grant_type: 'refresh_token',
+        refresh_token: this.creatorToken.refresh_token,
+        client_id: clientId!,
+        client_secret: clientSecret!,
+      });
+
+      // this.logger.debug('[refreshCreatorToken] Refrescando token del creador...');
+
+      const response = await fetch(tokenUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: body.toString(),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        this.logger.error('[refreshCreatorToken] Error de Patreon:', errorData);
+        throw new Error(
+          `Patreon API error (${response.status}): ${errorData.error}`,
         );
       }
+
+      const tokenData = await response.json();
+
+      const expiresAt = new Date(
+        Date.now() + tokenData.expires_in * 1000,
+      );
+
+      this.creatorToken = {
+        access_token: tokenData.access_token,
+        refresh_token: tokenData.refresh_token,
+        expires_at: expiresAt.toISOString(),
+        scope: tokenData.scope,
+        token_type: tokenData.token_type,
+        expires_in: tokenData.expires_in.toString(),
+        expires_in_epoch: Math.floor(expiresAt.getTime() / 1000).toString(),
+      };
+
+      this.logger.log('[refreshCreatorToken] Token refrescado exitosamente.');
+
+      this.logger.warn(
+        'Actualiza tu .env con estos valores para evitar fallos si el servidor reinicia:',
+      );
+      this.logger.warn(`PATREON_CREATOR_ACCESS_TOKEN=${tokenData.access_token}`);
+      this.logger.warn(`PATREON_CREATOR_REFRESH_TOKEN=${tokenData.refresh_token}`);
+    } catch (error) {
+      this.logger.error('[refreshCreatorToken] Error:', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+
+      throw new UnauthorizedException(
+        'Failed to refresh Patreon creator token',
+      );
     }
-    return new PatreonUserClientInstance(this.baseClient, this.creatorToken);
   }
 
   /**
