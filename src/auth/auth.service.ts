@@ -2,14 +2,11 @@ import {
   Injectable,
   Logger,
   UnauthorizedException,
-  ForbiddenException,
 } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { PatreonApiService } from '../patreon-api/patreon-api.service';
 import type { FlatIdentity } from '../interface/FlatIdentity';
 import type { SessionJwtPayload } from '../interface/SessionJwtPayload';
-import { type Oauth2StoredToken } from 'patreon-api.ts';
 
 @Injectable()
 export class AuthService {
@@ -18,44 +15,34 @@ export class AuthService {
   constructor(
     private readonly patreonApi: PatreonApiService,
     private readonly jwtService: JwtService,
-    private readonly configService: ConfigService,
   ) { }
 
   /**
-   * Punto de entrada principal para el callback de Patreon.
+   * Procesa el callback de Patreon después de validación CSRF.
+   * La validación CSRF ocurre en AuthController
    */
-  public async handlePatreonCallback(
-    code: string,
-    stateFromQuery: string,
-    stateFromCookie: string | false,
-  ): Promise<string> {
-    this.logger.log('Iniciando callback de Patreon...');
+  public async handlePatreonCallback(code: string): Promise<string> {
+    this.logger.log('Procesando callback de Patreon...');
 
-    // 1. Validación CSRF
-    if (stateFromCookie === false || stateFromCookie !== stateFromQuery) {
-      this.logger.error('Fallo en la validación CSRF: El estado no coincide.');
-      throw new ForbiddenException(
-        'Invalid OAuth state (CSRF validation failed)',
-      );
-    }
-    this.logger.log('Validación CSRF exitosa.');
-
-    // 2. Intercambio de Código
-    let tokens: Oauth2StoredToken;
+    // 1. Intercambio de Código
+    let tokens;
     try {
       tokens = await this.patreonApi.getTokens(code);
+      this.logger.log('Token de acceso obtenido.');
     } catch (error) {
-      this.logger.error(`Fallo al intercambiar el código: ${error.message}`);
+      this.logger.error(
+        `Fallo al intercambiar el código: ${error.message}`,
+      );
       throw new UnauthorizedException(
         'No se pudo intercambiar el código de Patreon.',
       );
     }
-    this.logger.log('Token de acceso obtenido.');
 
-    // 3. Verificación de Membresía
+    // 2. Obtención de Identidad del Usuario
     let identity: any;
     try {
       identity = await this.patreonApi.getUserIdentity(tokens);
+      this.logger.log('Identidad del usuario obtenida.');
     } catch (error) {
       this.logger.error(`Fallo al obtener la identidad: ${error.message}`);
       throw new UnauthorizedException(
@@ -63,8 +50,8 @@ export class AuthService {
       );
     }
 
-    // 4. Aplanar y Autorizar
-    const flatIdentity = this.flattenIdentityResponse(identity); // <-- Esto funcionará
+    // 3. Aplanar y Validar Membresía
+    const flatIdentity = this.flattenIdentityResponse(identity);
     const primaryTier = this.getPrimaryTier(flatIdentity);
 
     if (!primaryTier) {
@@ -80,15 +67,14 @@ export class AuthService {
       `Usuario autorizado: ${flatIdentity.email} (ID: ${flatIdentity.userId}) con tier: ${primaryTier.title}`,
     );
 
-    // 5. Generación de JWT
-    // Usamos el título del tier como el 'game_level'
+    // 4. Generación de JWT
     const payload: SessionJwtPayload = {
       sub: flatIdentity.userId,
-      game_level: primaryTier.title, // <-- GDevelop recibirá "Tier 20", "Tier 10", etc.
+      game_level: primaryTier.title,
     };
 
-    // El JwtModule ya está configurado con secreto y expiración (60s)
     const sessionToken = this.jwtService.sign(payload);
+    this.logger.log(`JWT generado para usuario ${flatIdentity.userId}`);
 
     return sessionToken;
   }
@@ -104,7 +90,7 @@ export class AuthService {
       return null;
     }
 
-    // 2. Si tiene tiers, devuelve el primero.
+    // 2. Si tiene tiers, devuelve el primero
     if (identity.tiers.length > 0) {
       return identity.tiers[0];
     }
@@ -120,7 +106,18 @@ export class AuthService {
     const userData = identity.data;
     const included = identity.included || [];
 
+    // this.logger.debug('[flattenIdentityResponse] Respuesta completa de Patreon:', {
+    //   userData: JSON.stringify(userData, null, 2),
+    //   includedLength: included.length,
+    //   includedTypes: included.map((item: any) => item.type),
+    // });
+
     const membership = included.find((item: any) => item.type === 'member');
+
+    // this.logger.debug('[flattenIdentityResponse] Membresía encontrada:', {
+    //   exists: !!membership,
+    //   membership: membership ? JSON.stringify(membership, null, 2) : 'NO ENCONTRADA',
+    // });
 
     const tiers = (
       membership?.relationships?.currently_entitled_tiers?.data || []
@@ -138,7 +135,8 @@ export class AuthService {
         title: tier.attributes.title,
       }));
 
-    return {
+
+    const flatIdentity: FlatIdentity = {
       userId: userData.id,
       fullName: userData.attributes.full_name,
       email: userData.attributes.email,
@@ -146,5 +144,8 @@ export class AuthService {
       patronStatus: membership?.attributes?.patron_status || null,
       tiers: tiers,
     };
+
+    this.logger.debug('[flattenIdentityResponse] Objeto aplanado final:', flatIdentity);
+    return flatIdentity;
   }
 }
