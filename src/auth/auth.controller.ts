@@ -7,7 +7,7 @@ import {
   ForbiddenException,
   Logger,
 } from '@nestjs/common';
-import { type FastifyReply, type FastifyRequest } from 'fastify'; // <-- ARREGLO 1
+import { type FastifyReply, type FastifyRequest } from 'fastify';
 import { randomBytes } from 'crypto';
 import { ConfigService } from '@nestjs/config';
 import { AuthService } from './auth.service';
@@ -18,8 +18,8 @@ export class AuthController {
 
   constructor(
     private readonly configService: ConfigService,
-    private readonly authService: AuthService, // <-- 1. Inyectamos AuthService
-  ) {}
+    private readonly authService: AuthService,
+  ) { }
 
   @Get('patreon/redirect')
   patreonRedirect(@Res() reply: FastifyReply) {
@@ -40,13 +40,12 @@ export class AuthController {
         secure: process.env.NODE_ENV === 'production', // Usar 'secure' en producción
         path: '/',
         maxAge: 300, // 5 minutos
-        signed: true, // <-- ¡AQUÍ ESTÁ LA MAGIA!
+        signed: true,
       })
-      .status(302) // <-- Establece el código de estado aquí
-      .redirect(patreonAuthUrl); // <-- Y aquí solo pasas la URL (string)
+      .status(302)
+      .redirect(patreonAuthUrl);
   }
 
-  // --- 2. IMPLEMENTACIÓN DEL NUEVO ENDPOINT DE CALLBACK (Flujo 1) ---
   @Get('patreon/callback')
   async patreonCallback(
     @Req() req: FastifyRequest,
@@ -58,7 +57,6 @@ export class AuthController {
       `Callback de Patreon recibido con código: ${code ? '...' : 'NULO'}`,
     );
 
-    // 3. Validamos la cookie CSRF firmada
     const signedState = req.cookies['patreon_oauth_state'];
     if (!signedState) {
       throw new ForbiddenException(
@@ -73,22 +71,19 @@ export class AuthController {
     }
 
     try {
-      // 4. Pasamos todo al AuthService para que maneje la lógica
       const sessionToken = await this.authService.handlePatreonCallback(
         code,
         state,
         stateFromCookie,
       );
 
-      // 5. Limpiamos la cookie CSRF
       reply.clearCookie('patreon_oauth_state', {
         httpOnly: true,
         secure: process.env.NODE_ENV === 'production',
         path: '/',
       });
 
-      // 6. Redirigimos al cliente del juego con el token (Parte 3.5)
-      // (En producción, esto debería venir de una variable de entorno)
+      // 6. Redirigimos al cliente del juego con el token
       const clientRedirectUrl = `my-game://auth?token=${sessionToken}`;
       this.logger.log('Autenticación exitosa, redirigiendo al cliente...');
 
