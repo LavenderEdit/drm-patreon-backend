@@ -23,6 +23,14 @@ export class PatreonApiService {
     )!;
     const redirectUri = this.configService.get<string>('PATREON_REDIRECT_URI')!;
 
+    // --- DEPURACIÓN (YA NO ES NECESARIA, PERO PUEDES DEJARLA) ---
+    this.logger.debug('--- VERIFICANDO VARIABLES DE ENTORNO ---');
+    this.logger.debug(`CLIENT_ID:     [${clientId}]`);
+    this.logger.debug(`CLIENT_SECRET: [${clientSecret.substring(0, 5)}...]`);
+    this.logger.debug(`REDIRECT_URI:  [${redirectUri}]`);
+    this.logger.debug('------------------------------------------');
+    // --- FIN DE LA DEPURACIÓN ---
+
     if (!clientId || !clientSecret) {
       throw new Error('Patreon client ID or secret not configured.');
     }
@@ -50,13 +58,36 @@ export class PatreonApiService {
    * Implementación de 4.2: Intercambio de Código por Tokens
    */
   async getTokens(code: string): Promise<Oauth2StoredToken> {
+    // --- MÁS DEPURACIÓN ---
+    this.logger.debug(
+      `[getTokens] Intentando intercambiar código: "${code.substring(0, 10)}..."`,
+    );
+    // --- FIN DE LA DEPURACIÓN ---
+
     try {
-      const storedToken = await this.baseClient.fetchToken(code);
+      const storedToken = await this.baseClient.oauth.getOauthTokenFromCode(code);
       if (!storedToken) {
+        // --- MÁS DEPURACIÓN ---
+        this.logger.error('[getTokens] fetchToken devolvió undefined.');
+        // --- FIN DE LA DEPURACIÓN ---
         throw new Error('Failed to fetch token from code (token is undefined)');
       }
+      // --- MÁS DEPURACIÓN ---
+      this.logger.debug('[getTokens] Token obtenido exitosamente.');
+      // --- FIN DE LA DEPURACIÓN ---
       return storedToken;
     } catch (error) {
+      // --- MÁS DEPURACIÓN: ¡ESTO ES LO MÁS IMPORTANTE! ---
+      // Imprime el error COMPLETO, no solo el mensaje.
+      this.logger.error(
+        `[getTokens] Error COMPLETO al intercambiar: ${JSON.stringify(
+          error,
+          null,
+          2,
+        )}`,
+      );
+      // --- FIN DE LA DEPURACIÓN ---
+
       this.logger.error(`Error in getTokens: ${error.message}`);
       throw new UnauthorizedException(
         'Failed to exchange Patreon code for token.',
