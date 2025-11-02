@@ -83,7 +83,6 @@ export class AuthController {
         path: '/',
       });
 
-      // 6. Redirigimos al cliente del juego con el token
       const clientRedirectUrl = `my-game://auth?token=${sessionToken}`;
       this.logger.log('Autenticación exitosa, redirigiendo al cliente...');
 
@@ -93,7 +92,6 @@ export class AuthController {
         `Fallo en el flujo de callback: ${error.message}`,
         error.stack,
       );
-      // Redirigir a una página de error en el cliente
       const errorRedirect =
         this.configService.get<string>('CLIENT_ERROR_URL') ??
         'my-game://auth?error=true';
