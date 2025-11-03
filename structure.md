@@ -1,0 +1,42 @@
+```
+└── 📁drm-patreon-backend
+    └── 📁src
+        └── 📁auth
+            ├── auth.controller.ts
+            ├── auth.module.ts
+            ├── auth.service.ts
+            ├── ws-auth.middleware.ts
+        └── 📁events
+            ├── events.gateway.ts
+            ├── events.module.ts
+        └── 📁interface
+            ├── FlatIdentity.ts
+            ├── SessionJwtPayload.ts
+        └── 📁patreon-api
+            ├── patreon-api.module.ts
+            ├── patreon-api.service.ts
+        └── 📁session-manager
+            ├── session-manager.module.ts
+            ├── session-manager.service.ts
+        └── 📁tasks
+            ├── tasks.module.ts
+            ├── tasks.service.ts
+        ├── app.controller.spec.ts
+        ├── app.controller.ts
+        ├── app.module.ts
+        ├── app.service.ts
+        ├── main.ts
+    └── 📁test
+        ├── app.e2e-spec.ts
+        ├── jest-e2e.json
+    ├── .env
+    ├── .gitignore
+    ├── .prettierrc
+    ├── eslint.config.mjs
+    ├── nest-cli.json
+    ├── package-lock.json
+    ├── package.json
+    ├── README.md
+    ├── tsconfig.build.json
+    └── tsconfig.json
+```
