@@ -15,7 +15,7 @@ export class AuthService {
   constructor(
     private readonly patreonApi: PatreonApiService,
     private readonly jwtService: JwtService,
-  ) { }
+  ) {}
 
   /**
    * Procesa el callback de Patreon después de validación CSRF.
@@ -54,6 +54,7 @@ export class AuthService {
     const flatIdentity = this.flattenIdentityResponse(identity);
     const primaryTier = this.getPrimaryTier(flatIdentity);
 
+    // 3.1 Validar si tiene un tier activo
     if (!primaryTier) {
       this.logger.warn(
         `Autorización fallida para ${flatIdentity.email} (ID: ${flatIdentity.userId}). Estado: ${flatIdentity.patronStatus}`,
@@ -63,14 +64,44 @@ export class AuthService {
       );
     }
 
+    const tierTitle = primaryTier.title;
+    let gameAccessLevel: string;
+
+    switch (tierTitle) {
+      case 'Professor':
+        gameAccessLevel = 'Intro';
+        break;
+      case "Bachelor's Degree":
+        gameAccessLevel = 'NoIntro';
+        break;
+      case 'College student':
+        gameAccessLevel = 'NoIntro';
+        break;
+      case 'Patron':
+      default:
+        gameAccessLevel = 'NoIntro';
+        break;
+    }
+
+    // 3.3 Nueva Validación: Bloquear si el nivel de acceso no es 'Intro'
+    if (gameAccessLevel !== 'Intro') {
+      this.logger.warn(
+        `Acceso denegado para ${flatIdentity.email} (ID: ${flatIdentity.userId}). Tier: ${tierTitle} (Nivel: ${gameAccessLevel})`,
+      );
+      throw new UnauthorizedException(
+        'Tu nivel de mecenas no tiene acceso a este contenido por el momento.',
+      );
+    }
+
+    // Si el código llega aquí, el usuario tiene 'Intro'
     this.logger.log(
-      `Usuario autorizado: ${flatIdentity.email} (ID: ${flatIdentity.userId}) con tier: ${primaryTier.title}`,
+      `Usuario autorizado: ${flatIdentity.email} (ID: ${flatIdentity.userId}) con tier: ${tierTitle} (Nivel: ${gameAccessLevel})`,
     );
 
-    // 4. Generación de JWT
+    // 4. Generación de JWT con el Nivel de Acceso
     const payload: SessionJwtPayload = {
       sub: flatIdentity.userId,
-      game_level: primaryTier.title,
+      game_level: gameAccessLevel,
     };
 
     const sessionToken = this.jwtService.sign(payload);
@@ -106,18 +137,7 @@ export class AuthService {
     const userData = identity.data;
     const included = identity.included || [];
 
-    // this.logger.debug('[flattenIdentityResponse] Respuesta completa de Patreon:', {
-    //   userData: JSON.stringify(userData, null, 2),
-    //   includedLength: included.length,
-    //   includedTypes: included.map((item: any) => item.type),
-    // });
-
     const membership = included.find((item: any) => item.type === 'member');
-
-    // this.logger.debug('[flattenIdentityResponse] Membresía encontrada:', {
-    //   exists: !!membership,
-    //   membership: membership ? JSON.stringify(membership, null, 2) : 'NO ENCONTRADA',
-    // });
 
     const tiers = (
       membership?.relationships?.currently_entitled_tiers?.data || []
