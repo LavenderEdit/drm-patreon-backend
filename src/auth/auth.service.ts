@@ -64,44 +64,44 @@ export class AuthService {
       );
     }
 
-    const tierTitle = primaryTier.title;
-    let gameAccessLevel: string;
+    // const tierTitle = primaryTier.title;
+    // let gameAccessLevel: string;
 
-    switch (tierTitle) {
-      case 'Professor':
-        gameAccessLevel = 'Intro';
-        break;
-      case "Bachelor's Degree":
-        gameAccessLevel = 'NoIntro';
-        break;
-      case 'College student':
-        gameAccessLevel = 'NoIntro';
-        break;
-      case 'Patron':
-      default:
-        gameAccessLevel = 'NoIntro';
-        break;
-    }
+    // switch (tierTitle) {
+    //   case 'Professor':
+    //     gameAccessLevel = 'Intro';
+    //     break;
+    //   case "Bachelor's Degree":
+    //     gameAccessLevel = 'NoIntro';
+    //     break;
+    //   case 'College student':
+    //     gameAccessLevel = 'NoIntro';
+    //     break;
+    //   case 'Patron':
+    //   default:
+    //     gameAccessLevel = 'NoIntro';
+    //     break;
+    // }
 
-    // 3.3 Nueva Validación: Bloquear si el nivel de acceso no es 'Intro'
-    if (gameAccessLevel !== 'Intro') {
-      this.logger.warn(
-        `Acceso denegado para ${flatIdentity.email} (ID: ${flatIdentity.userId}). Tier: ${tierTitle} (Nivel: ${gameAccessLevel})`,
-      );
-      throw new UnauthorizedException(
-        'Tu nivel de mecenas no tiene acceso a este contenido por el momento.',
-      );
-    }
+    // // 3.3 Nueva Validación: Bloquear si el nivel de acceso no es 'Intro'
+    // if (gameAccessLevel !== 'Intro') {
+    //   this.logger.warn(
+    //     `Acceso denegado para ${flatIdentity.email} (ID: ${flatIdentity.userId}). Tier: ${tierTitle} (Nivel: ${gameAccessLevel})`,
+    //   );
+    //   throw new UnauthorizedException(
+    //     'Tu nivel de mecenas no tiene acceso a este contenido por el momento.',
+    //   );
+    // }
 
-    // Si el código llega aquí, el usuario tiene 'Intro'
-    this.logger.log(
-      `Usuario autorizado: ${flatIdentity.email} (ID: ${flatIdentity.userId}) con tier: ${tierTitle} (Nivel: ${gameAccessLevel})`,
-    );
+    // // Si el código llega aquí, el usuario tiene 'Intro'
+    // this.logger.log(
+    //   `Usuario autorizado: ${flatIdentity.email} (ID: ${flatIdentity.userId}) con tier: ${tierTitle} (Nivel: ${gameAccessLevel})`,
+    // );
 
     // 4. Generación de JWT con el Nivel de Acceso
     const payload: SessionJwtPayload = {
       sub: flatIdentity.userId,
-      game_level: gameAccessLevel,
+      game_level: primaryTier.title,
     };
 
     const sessionToken = this.jwtService.sign(payload);
