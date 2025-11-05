@@ -26,7 +26,15 @@ async function bootstrap() {
     secret: cookieSecret,
   });
 
-  await app.listen(3000);
-  console.log('Aplicación corriendo en http://localhost:3000');
+  // --- INICIO DE LA CORRECCIÓN ---
+
+  // 1. Obtener el puerto de las variables de entorno (Render lo provee en 'PORT')
+  const port = configService.get<number>('PORT') || 3000;
+
+  // 2. Escuchar en '0.0.0.0' para aceptar conexiones externas
+  await app.listen(port, '0.0.0.0');
+
+  // 3. (Opcional pero recomendado) Actualizar el log
+  console.log(`Aplicación corriendo en http://0.0.0.0:${port}`);
 }
 bootstrap();
