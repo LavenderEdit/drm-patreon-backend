@@ -6,6 +6,7 @@ import {
 import { JwtService } from '@nestjs/jwt';
 import { PatreonApiService } from '../patreon-api/patreon-api.service';
 import type { FlatIdentity } from '../interface/FlatIdentity';
+import { ConfigService } from '@nestjs/config';
 import type { SessionJwtPayload } from '../interface/SessionJwtPayload';
 
 @Injectable()
@@ -15,6 +16,7 @@ export class AuthService {
   constructor(
     private readonly patreonApi: PatreonApiService,
     private readonly jwtService: JwtService,
+    private readonly ConfigService: ConfigService,
   ) {}
 
   /**
@@ -54,54 +56,45 @@ export class AuthService {
     const flatIdentity = this.flattenIdentityResponse(identity);
     const primaryTier = this.getPrimaryTier(flatIdentity);
 
-    // 3.1 Validar si tiene un tier activo
-    if (!primaryTier) {
+    // 3.1. Primero, verificar que sea un mecenas activo
+    if (flatIdentity.patronStatus !== 'active_patron') {
       this.logger.warn(
         `Autorización fallida para ${flatIdentity.email} (ID: ${flatIdentity.userId}). Estado: ${flatIdentity.patronStatus}`,
       );
+      throw new UnauthorizedException('No eres un mecenas activo.');
+    }
+
+    // 3.2. Cargar la lista de IDs permitidos desde el .env
+    const allowedTierIdsEnv =
+      this.ConfigService.get<string>('PATREON_ALLOWED_TIER_IDS') || '';
+    const allowedTierIds = allowedTierIdsEnv.split(',');
+
+    // 3.3. Comprobar si *alguno* de los tiers del usuario está en nuestra lista de permitidos
+    const hasAccess = flatIdentity.tiers.some((userTier) =>
+      allowedTierIds.includes(userTier.id),
+    );
+
+    const gameAccessLevel = hasAccess ? 'Intro' : 'NoIntro';
+
+    // 3.4. Bloquear si no tiene el nivel 'Intro'
+    if (gameAccessLevel !== 'Intro') {
+      this.logger.warn(
+        `Acceso denegado para ${flatIdentity.email} (ID: ${flatIdentity.userId}). Sus tiers [${flatIdentity.tiers.map((t) => t.id).join(', ')}] no están en la lista de permitidos.`,
+      );
       throw new UnauthorizedException(
-        'No eres un mecenas activo o no tienes un tier válido.',
+        'Tu nivel de mecenas no tiene acceso a este contenido por el momento.',
       );
     }
 
-    // const tierTitle = primaryTier.title;
-    // let gameAccessLevel: string;
-
-    // switch (tierTitle) {
-    //   case 'Professor':
-    //     gameAccessLevel = 'Intro';
-    //     break;
-    //   case "Bachelor's Degree":
-    //     gameAccessLevel = 'NoIntro';
-    //     break;
-    //   case 'College student':
-    //     gameAccessLevel = 'NoIntro';
-    //     break;
-    //   case 'Patron':
-    //   default:
-    //     gameAccessLevel = 'NoIntro';
-    //     break;
-    // }
-
-    // // 3.3 Nueva Validación: Bloquear si el nivel de acceso no es 'Intro'
-    // if (gameAccessLevel !== 'Intro') {
-    //   this.logger.warn(
-    //     `Acceso denegado para ${flatIdentity.email} (ID: ${flatIdentity.userId}). Tier: ${tierTitle} (Nivel: ${gameAccessLevel})`,
-    //   );
-    //   throw new UnauthorizedException(
-    //     'Tu nivel de mecenas no tiene acceso a este contenido por el momento.',
-    //   );
-    // }
-
-    // // Si el código llega aquí, el usuario tiene 'Intro'
-    // this.logger.log(
-    //   `Usuario autorizado: ${flatIdentity.email} (ID: ${flatIdentity.userId}) con tier: ${tierTitle} (Nivel: ${gameAccessLevel})`,
-    // );
+    // 3.5. Autorizado
+    this.logger.log(
+      `Usuario autorizado: ${flatIdentity.email} (ID: ${flatIdentity.userId}) con nivel: ${gameAccessLevel}`,
+    );
 
     // 4. Generación de JWT con el Nivel de Acceso
     const payload: SessionJwtPayload = {
       sub: flatIdentity.userId,
-      game_level: primaryTier.title,
+      game_level: gameAccessLevel,
     };
 
     const sessionToken = this.jwtService.sign(payload);
