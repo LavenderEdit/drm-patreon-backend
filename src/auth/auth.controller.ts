@@ -107,7 +107,7 @@ export class AuthController {
       // this.logger.error(`Error: ${error.message}`);
       const errorRedirect =
         this.configService.get<string>('CLIENT_ERROR_URL') ??
-        'my-game://auth?error=true';
+        'com.eric.dick://auth?error=true';
       reply.status(302).redirect(errorRedirect);
     }
   }
