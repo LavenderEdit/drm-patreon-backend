@@ -20,7 +20,7 @@ export class AuthController {
   constructor(
     private readonly configService: ConfigService,
     private readonly authService: AuthService,
-    private readonly appService: AppService, // <-- 2. INYECTAMOS AppService
+    private readonly appService: AppService,
   ) {}
 
   @Get('patreon/redirect')
