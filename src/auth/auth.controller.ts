@@ -95,7 +95,12 @@ export class AuthController {
         path: '/',
       });
 
-      const clientRedirectUrl = `my-game://auth?token=${sessionToken}`;
+      const clientSuccessUrl = this.configService.get<string>('CLIENT_SUCCESS_URL');
+      if (!clientSuccessUrl) {
+        this.logger.error('CLIENT_SUCCESS_URL no está definida en el archivo .env');
+        throw new Error('Configuración de redirección de cliente incompleta.');
+     }
+      const clientRedirectUrl = `${clientSuccessUrl}?token=${sessionToken}`;
       // this.logger.log('Autenticación exitosa, redirigiendo al cliente...');
       reply.status(302).redirect(clientRedirectUrl);
     } catch (error) {
