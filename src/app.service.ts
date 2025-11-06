@@ -5,7 +5,6 @@ import { Injectable } from '@nestjs/common';
 export interface AuthSuccessData {
   fullName: string;
   tierTitle: string;
-  redirectUrl: string;
 }
 
 @Injectable()
@@ -46,9 +45,6 @@ export class AppService {
       .replace(/</g, '&lt;')
       .replace(/>/g, '&gt;');
 
-    // ¡Importante! Sanitizamos la URL para usarla dentro de JavaScript
-    const safeRedirectUrl = data.redirectUrl.replace(/'/g, "\\'");
-
     return `
       <!DOCTYPE html>
       <html lang="es">
@@ -56,16 +52,6 @@ export class AppService {
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <title>¡Acceso Autorizado!</title>
-        
-        <script>
-          (function() {
-            var redirectUrl = '${safeRedirectUrl}';
-            setTimeout(function() {
-              window.location.replace(redirectUrl);
-            }, 3000); // Redirige después de 3 segundos
-          })();
-        </script>
-        
       </head>
       <body style="font-family: sans-serif; text-align: center; padding-top: 50px; background-color: #f8fcf8; color: #333;">
         

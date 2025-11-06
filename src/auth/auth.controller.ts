@@ -121,34 +121,9 @@ export class AuthController {
       const { sessionToken, identity, activeTier } =
         await this.authService.handlePatreonCallback(code);
 
-      const successUrlKey =
-        platform === 'mobile'
-          ? 'CLIENT_SUCCESS_URL_MOBILE'
-          : 'CLIENT_SUCCESS_URL_DESKTOP';
-
-      const clientBaseUrl = this.configService.get<string>(successUrlKey);
-
-      if (!clientBaseUrl) {
-        this.logger.error(
-          `${successUrlKey} no está definida en el archivo .env`,
-        );
-        const htmlError = this.appService.getAuthErrorHtml(
-          `Configuración de redirección de cliente (${successUrlKey}) incompleta.`,
-        ); //
-        reply.type('text/html; charset=utf-8').status(500).send(htmlError);
-        return;
-      }
-
-      const clientRedirectUrl = `${clientBaseUrl}?token=${sessionToken}`;
-
-      this.logger.log(
-        `Autenticación exitosa, mostrando página de éxito para: ${identity.fullName}. Redirigiendo a: ${successUrlKey}`, //
-      );
-
       const htmlSuccess = this.appService.getAuthSuccessHtml({
-        fullName: identity.fullName, //
-        tierTitle: activeTier.title,
-        redirectUrl: clientRedirectUrl,
+        fullName: identity.fullName,
+        tierTitle: activeTier.title
       });
 
       reply.type('text/html; charset=utf-8').status(200).send(htmlSuccess);

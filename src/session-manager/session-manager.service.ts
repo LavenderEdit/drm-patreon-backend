@@ -8,6 +8,7 @@ export class SessionManagerService {
 
     registerConnection(userId: string, socket: Socket): void {
         const oldSocket = this.sessions.get(userId);
+        this.logger.log(`[DEBUG] Registrando conexión para ${userId} - socket.id: ${socket.id}`);
 
         if (oldSocket && oldSocket.id !== socket.id) {
             this.logger.warn(
@@ -25,6 +26,7 @@ export class SessionManagerService {
     }
 
     removeConnection(userId: string): void {
+        this.logger.log(`[DEBUG] Eliminando conexión para ${userId}`);
         if (this.sessions.has(userId)) {
             this.sessions.delete(userId);
             this.logger.log(`Conexión eliminada para ${userId}`);
