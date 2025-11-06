@@ -79,9 +79,7 @@ export class AppService {
         </div>
 
         <p style="font-size: 0.9em; color: #777;">
-          Serás redirigido de vuelta al juego en 3 segundos...
-          <br>
-          Si no pasa nada, puedes cerrar esta ventana.
+          puedes cerrar esta pagina y volver al juego .
         </p>
         
         <hr style="width: 50%; border: 0; border-top: 1px solid #eee; margin-top: 30px;">
