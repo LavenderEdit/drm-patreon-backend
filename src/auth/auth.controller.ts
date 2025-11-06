@@ -1,3 +1,4 @@
+// [Contenido del archivo: lavenderedit/drm-patreon-backend/drm-patreon-backend-1c7d7cdf75688d95935285c32e2f6cc9de3deec5/src/auth/auth.controller.ts]
 import {
   Controller,
   Get,
@@ -11,7 +12,7 @@ import { type FastifyReply, type FastifyRequest } from 'fastify';
 import { randomBytes } from 'crypto';
 import { ConfigService } from '@nestjs/config';
 import { AuthService } from './auth.service';
-import { AppService } from '../app.service'; // <-- 1. IMPORTAMOS AppService
+import { AppService } from '../app.service'; //
 
 @Controller('auth')
 export class AuthController {
@@ -19,8 +20,8 @@ export class AuthController {
 
   constructor(
     private readonly configService: ConfigService,
-    private readonly authService: AuthService,
-    private readonly appService: AppService,
+    private readonly authService: AuthService, //
+    private readonly appService: AppService, //
   ) {}
 
   @Get('patreon/redirect')
@@ -29,7 +30,6 @@ export class AuthController {
     // --- MODIFICACIÓN: Detectar plataforma ---
     @Query('platform') platformQuery: string,
   ) {
-    // Detectar la plataforma (default a 'desktop')
     const platform = platformQuery === 'mobile' ? 'mobile' : 'desktop';
     const csrfState = randomBytes(16).toString('hex');
 
@@ -56,7 +56,6 @@ export class AuthController {
     try {
       reply
         .setCookie('patreon_oauth_state', cookieData, {
-          // Guardamos "estado:plataforma"
           httpOnly: true,
           secure: process.env.NODE_ENV === 'production',
           path: '/',
@@ -69,7 +68,7 @@ export class AuthController {
       // Si falla antes de redirigir, mostramos un HTML de error genérico
       const htmlError = this.appService.getAuthErrorHtml(
         'No se pudo iniciar el proceso de login. Intente de nuevo.',
-      );
+      ); //
       reply.type('text/html; charset=utf-8').status(500).send(htmlError);
     }
   }
@@ -92,7 +91,7 @@ export class AuthController {
       // Si no hay cookie, mostramos el error HTML
       const htmlError = this.appService.getAuthErrorHtml(
         'No se encontró la cookie de estado (CSRF). Su sesión puede haber expirado. Por favor, intente iniciar sesión de nuevo.',
-      );
+      ); //
       reply.type('text/html; charset=utf-8').status(403).send(htmlError);
       return;
     }
@@ -102,7 +101,7 @@ export class AuthController {
     if (!valid) {
       const htmlError = this.appService.getAuthErrorHtml(
         'Cookie de estado inválida. Por favor, intente iniciar sesión de nuevo.',
-      );
+      ); //
       reply.type('text/html; charset=utf-8').status(403).send(htmlError);
       return;
     }
@@ -117,7 +116,7 @@ export class AuthController {
       );
       const htmlError = this.appService.getAuthErrorHtml(
         'Estado CSRF inválido. No se pudo verificar la solicitud. Por favor, intente iniciar sesión de nuevo.',
-      );
+      ); //
       reply.type('text/html; charset=utf-8').status(403).send(htmlError);
       return;
     }
@@ -134,37 +133,28 @@ export class AuthController {
     });
 
     try {
-      const sessionToken = await this.authService.handlePatreonCallback(code);
+      // --- ⬇️ LÓGICA DE ÉXITO MODIFICADA ⬇️ ---
 
-      // ELEGIR LA URL DE ÉXITO CORRECTA
-      const successUrlKey =
-        platform === 'mobile'
-          ? 'CLIENT_SUCCESS_URL_MOBILE'
-          : 'CLIENT_SUCCESS_URL_DESKTOP';
+      // 1. Obtenemos el token, la identidad y el tier validado
+      const { sessionToken, identity, activeTier } =
+        await this.authService.handlePatreonCallback(code); //
 
-      const clientSuccessUrl = this.configService.get<string>(successUrlKey);
-
-      if (!clientSuccessUrl) {
-        this.logger.error(
-          `${successUrlKey} no está definida en el archivo .env`,
-        );
-        // Si la URL de éxito no está, mostramos error HTML
-        const htmlError = this.appService.getAuthErrorHtml(
-          `Configuración de redirección de cliente (${successUrlKey}) incompleta.`,
-        );
-        reply.type('text/html; charset=utf-8').status(500).send(htmlError);
-        return;
-      }
-
-      const clientRedirectUrl = `${clientSuccessUrl}?token=${sessionToken}`;
       this.logger.log(
-        `Autenticación exitosa, redirigiendo a: ${successUrlKey}`,
+        `Autenticación exitosa, mostrando página de éxito para: ${identity.fullName} (Tier: ${activeTier.title})`, //
       );
-      reply.status(302).redirect(clientRedirectUrl);
-    } catch (error) {
-      // --- 3. ¡AQUÍ ESTÁ LA MAGIA! ---
-      // En lugar de redirigir, generamos y enviamos el HTML de error.
 
+      // 2. Generamos el HTML de éxito
+      const htmlSuccess = this.appService.getAuthSuccessHtml({
+        fullName: identity.fullName, //
+        tierTitle: activeTier.title,
+        sessionToken: sessionToken,
+      });
+
+      // 3. Enviamos la página HTML
+      reply.type('text/html; charset=utf-8').status(200).send(htmlSuccess);
+
+      // --- ⬆️ FIN DE LA LÓGICA MODIFICADA ⬆️ ---
+    } catch (error) {
       const errorMessage =
         error instanceof Error && error.message
           ? error.message
@@ -172,10 +162,8 @@ export class AuthController {
 
       this.logger.warn(`Autorización fallida: ${errorMessage}`);
 
-      // Usamos AppService para generar el HTML
-      const htmlError = this.appService.getAuthErrorHtml(errorMessage);
+      const htmlError = this.appService.getAuthErrorHtml(errorMessage); //
 
-      // Enviamos el HTML como respuesta
       reply.type('text/html; charset=utf-8').status(401).send(htmlError);
     }
   }

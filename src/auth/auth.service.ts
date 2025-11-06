@@ -1,13 +1,17 @@
-import {
-  Injectable,
-  Logger,
-  UnauthorizedException,
-} from '@nestjs/common';
+import { Injectable, Logger, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { PatreonApiService } from '../patreon-api/patreon-api.service';
-import type { FlatIdentity } from '../interface/FlatIdentity';
+import type { FlatIdentity } from '../interface/FlatIdentity'; //
 import { ConfigService } from '@nestjs/config';
-import type { SessionJwtPayload } from '../interface/SessionJwtPayload';
+import type { SessionJwtPayload } from '../interface/SessionJwtPayload'; //
+
+// --- NUEVA INTERFAZ AÑADIDA ---
+export interface HandlePatreonCallbackResult {
+  sessionToken: string;
+  identity: FlatIdentity;
+  activeTier: { id: string; title: string };
+}
+// --- FIN DE LA NUEVA INTERFAZ ---
 
 @Injectable()
 export class AuthService {
@@ -23,18 +27,19 @@ export class AuthService {
    * Procesa el callback de Patreon después de validación CSRF.
    * La validación CSRF ocurre en AuthController
    */
-  public async handlePatreonCallback(code: string): Promise<string> {
+  // --- TIPO DE RETORNO MODIFICADO ---
+  public async handlePatreonCallback(
+    code: string,
+  ): Promise<HandlePatreonCallbackResult> {
     this.logger.log('Procesando callback de Patreon...');
 
     // 1. Intercambio de Código
     let tokens;
     try {
-      tokens = await this.patreonApi.getTokens(code);
+      tokens = await this.patreonApi.getTokens(code); //
       this.logger.log('Token de acceso obtenido.');
     } catch (error) {
-      this.logger.error(
-        `Fallo al intercambiar el código: ${error.message}`,
-      );
+      this.logger.error(`Fallo al intercambiar el código: ${error.message}`);
       throw new UnauthorizedException(
         'No se pudo intercambiar el código de Patreon.',
       );
@@ -43,7 +48,7 @@ export class AuthService {
     // 2. Obtención de Identidad del Usuario
     let identity: any;
     try {
-      identity = await this.patreonApi.getUserIdentity(tokens);
+      identity = await this.patreonApi.getUserIdentity(tokens); //
       this.logger.log('Identidad del usuario obtenida.');
     } catch (error) {
       this.logger.error(`Fallo al obtener la identidad: ${error.message}`);
@@ -54,12 +59,12 @@ export class AuthService {
 
     // 3. Aplanar y Validar Membresía
     const flatIdentity = this.flattenIdentityResponse(identity);
-    const primaryTier = this.getPrimaryTier(flatIdentity);
 
     // 3.1. Primero, verificar que sea un mecenas activo
     if (flatIdentity.patronStatus !== 'active_patron') {
+      //
       this.logger.warn(
-        `Autorización fallida para ${flatIdentity.email} (ID: ${flatIdentity.userId}). Estado: ${flatIdentity.patronStatus}`,
+        `Autorización fallida para ${flatIdentity.email} (ID: ${flatIdentity.userId}). Estado: ${flatIdentity.patronStatus}`, //
       );
       throw new UnauthorizedException('No eres un mecenas activo.');
     }
@@ -69,17 +74,19 @@ export class AuthService {
       this.ConfigService.get<string>('PATREON_ALLOWED_TIER_IDS') || '';
     const allowedTierIds = allowedTierIdsEnv.split(',');
 
+    // --- LÓGICA DE VALIDACIÓN DE TIER ---
+
     // 3.3. Comprobar si *alguno* de los tiers del usuario está en nuestra lista de permitidos
-    const hasAccess = flatIdentity.tiers.some((userTier) =>
-      allowedTierIds.includes(userTier.id),
+    const activeTier = flatIdentity.tiers.find(
+      (
+        userTier, //
+      ) => allowedTierIds.includes(userTier.id),
     );
 
-    const gameAccessLevel = hasAccess ? 'Intro' : 'NoIntro';
-
-    // 3.4. Bloquear si no tiene el nivel 'Intro'
-    if (gameAccessLevel !== 'Intro') {
+    // 3.4. Bloquear si no se encontró un tier permitido
+    if (!activeTier) {
       this.logger.warn(
-        `Acceso denegado para ${flatIdentity.email} (ID: ${flatIdentity.userId}). Sus tiers [${flatIdentity.tiers.map((t) => t.id).join(', ')}] no están en la lista de permitidos.`,
+        `Acceso denegado para ${flatIdentity.email} (ID: ${flatIdentity.userId}). Sus tiers [${flatIdentity.tiers.map((t) => t.id).join(', ')}] no están en la lista de permitidos.`, //
       );
       throw new UnauthorizedException(
         'Tu nivel de mecenas no tiene acceso a este contenido por el momento.',
@@ -87,40 +94,24 @@ export class AuthService {
     }
 
     // 3.5. Autorizado
+    // Usamos el TÍTULO del tier para el game_level, es más descriptivo
+    const gameAccessLevel = activeTier.title;
     this.logger.log(
-      `Usuario autorizado: ${flatIdentity.email} (ID: ${flatIdentity.userId}) con nivel: ${gameAccessLevel}`,
+      `Usuario autorizado: ${flatIdentity.email} (ID: ${flatIdentity.userId}) con nivel: ${gameAccessLevel}`, //
     );
 
     // 4. Generación de JWT con el Nivel de Acceso
     const payload: SessionJwtPayload = {
-      sub: flatIdentity.userId,
-      game_level: gameAccessLevel,
+      //
+      sub: flatIdentity.userId, //
+      game_level: gameAccessLevel, // <-- Ahora es el título del tier
     };
 
     const sessionToken = this.jwtService.sign(payload);
-    this.logger.log(`JWT generado para usuario ${flatIdentity.userId}`);
+    this.logger.log(`JWT generado para usuario ${flatIdentity.userId}`); //
 
-    return sessionToken;
-  }
-
-  /**
-   * Verifica que el usuario sea un mecenas activo y devuelve su tier principal.
-   */
-  private getPrimaryTier(
-    identity: FlatIdentity,
-  ): { id: string; title: string } | null {
-    // 1. Debe ser un mecenas activo
-    if (identity.patronStatus !== 'active_patron') {
-      return null;
-    }
-
-    // 2. Si tiene tiers, devuelve el primero
-    if (identity.tiers.length > 0) {
-      return identity.tiers[0];
-    }
-
-    // 3. Si es un mecenas activo pero sin tier
-    return { id: 'active_patron', title: 'Patron' };
+    // --- VALOR DE RETORNO MODIFICADO ---
+    return { sessionToken, identity: flatIdentity, activeTier };
   }
 
   /**
@@ -148,7 +139,6 @@ export class AuthService {
         title: tier.attributes.title,
       }));
 
-
     const flatIdentity: FlatIdentity = {
       userId: userData.id,
       fullName: userData.attributes.full_name,
@@ -158,7 +148,10 @@ export class AuthService {
       tiers: tiers,
     };
 
-    this.logger.debug('[flattenIdentityResponse] Objeto aplanado final:', flatIdentity);
+    this.logger.debug(
+      '[flattenIdentityResponse] Objeto aplanado final:',
+      flatIdentity,
+    );
     return flatIdentity;
   }
 }
