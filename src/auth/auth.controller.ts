@@ -1,17 +1,20 @@
 import {
   Controller,
   Get,
+  Post,
+  Body,
   Res,
   Req,
   Query,
   ForbiddenException,
   Logger,
+  NotFoundException,
 } from '@nestjs/common';
 import { type FastifyReply, type FastifyRequest } from 'fastify';
 import { randomBytes } from 'crypto';
 import { ConfigService } from '@nestjs/config';
 import { AuthService } from './auth.service';
-import { AppService } from '../app.service'; //
+import { AppService } from '../app.service';
 
 @Controller('auth')
 export class AuthController {
@@ -19,16 +22,15 @@ export class AuthController {
 
   constructor(
     private readonly configService: ConfigService,
-    private readonly authService: AuthService, //
-    private readonly appService: AppService, //
-  ) {}
+    private readonly authService: AuthService,
+    private readonly appService: AppService,
+  ) { }
 
   @Get('patreon/redirect')
   patreonRedirect(
     @Res() reply: FastifyReply,
     @Query('platform') platformQuery: string,
   ) {
-    // ... (sin cambios)
     const platform = platformQuery === 'mobile' ? 'mobile' : 'desktop';
     const csrfState = randomBytes(16).toString('hex');
     const cookieData = `${csrfState}:${platform}`;
@@ -58,7 +60,7 @@ export class AuthController {
     } catch (error) {
       const htmlError = this.appService.getAuthErrorHtml(
         'No se pudo iniciar el proceso de login. Intente de nuevo.',
-      ); //
+      );
       reply.type('text/html; charset=utf-8').status(500).send(htmlError);
     }
   }
@@ -134,8 +136,15 @@ export class AuthController {
           : 'Error de autenticación desconocido.';
 
       this.logger.warn(`Autorización fallida: ${errorMessage}`);
-      const htmlError = this.appService.getAuthErrorHtml(errorMessage); //
+      const htmlError = this.appService.getAuthErrorHtml(errorMessage);
       reply.type('text/html; charset=utf-8').status(401).send(htmlError);
     }
+  }
+
+  @Post('/api/latest-token')
+  async findJwtTokenByEmail(@Body('email') email: string) {
+    const token = await this.authService.getLastJwtForEmail(email);
+    if (!token) throw new NotFoundException('No hay una sesión para ese correo');
+    return { token };
   }
 }

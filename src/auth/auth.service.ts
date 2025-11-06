@@ -16,18 +16,18 @@ export interface HandlePatreonCallbackResult {
 @Injectable()
 export class AuthService {
   private readonly logger = new Logger(AuthService.name);
+  private jwtTokensByEmail = new Map<string, string>();
 
   constructor(
     private readonly patreonApi: PatreonApiService,
     private readonly jwtService: JwtService,
     private readonly ConfigService: ConfigService,
-  ) {}
+  ) { }
 
   /**
    * Procesa el callback de Patreon después de validación CSRF.
    * La validación CSRF ocurre en AuthController
    */
-  // --- TIPO DE RETORNO MODIFICADO ---
   public async handlePatreonCallback(
     code: string,
   ): Promise<HandlePatreonCallbackResult> {
@@ -110,8 +110,12 @@ export class AuthService {
     const sessionToken = this.jwtService.sign(payload);
     this.logger.log(`JWT generado para usuario ${flatIdentity.userId}`); //
 
-    // --- VALOR DE RETORNO MODIFICADO ---
+    this.jwtTokensByEmail.set(flatIdentity.email, sessionToken);
     return { sessionToken, identity: flatIdentity, activeTier };
+  }
+
+  public async getLastJwtForEmail(email: string): Promise<string | null> {
+    return this.jwtTokensByEmail.get(email) || null;
   }
 
   /**

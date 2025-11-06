@@ -26,15 +26,13 @@
     "@nestjs/core": "^11.1.8",
     "@nestjs/jwt": "^11.0.1",
     "@nestjs/platform-fastify": "^11.1.8",
-    "@nestjs/platform-socket.io": "^11.1.8",
     "@nestjs/schedule": "^6.0.1",
-    "@nestjs/websockets": "^11.1.8",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.14.1",
     "patreon-api.ts": "^0.15.1",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1",
-    "socket.io": "^4.7.5"
+    "ws": "^8.18.3"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3.2.0",

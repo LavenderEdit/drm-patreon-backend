@@ -4,10 +4,10 @@ import { AppService } from './app.service';
 import { ConfigModule } from '@nestjs/config';
 import { AuthModule } from './auth/auth.module';
 import { PatreonApiModule } from './patreon-api/patreon-api.module';
-import { EventsModule } from './events/events.module';
 import { SessionManagerModule } from './session-manager/session-manager.module';
 import { ScheduleModule } from '@nestjs/schedule';
 import { TasksModule } from './tasks/tasks.module';
+import { WsModule } from './ws/ws.module';
 @Module({
   imports: [
     ConfigModule.forRoot({
@@ -19,7 +19,8 @@ import { TasksModule } from './tasks/tasks.module';
     PatreonApiModule,
     SessionManagerModule,
     TasksModule,
-    EventsModule,],
+    WsModule
+  ],
   controllers: [AppController],
   providers: [AppService],
 })
