@@ -1,7 +1,5 @@
 import { Injectable } from '@nestjs/common';
 
-// --- ⬇️ INTERFAZ MODIFICADA ⬇️ ---
-// Solo necesitamos los datos a MOSTRAR, no el token
 export interface AuthSuccessData {
   fullName: string;
   tierTitle: string;
@@ -10,7 +8,6 @@ export interface AuthSuccessData {
 @Injectable()
 export class AppService {
   getWelcomeHtml(): string {
-    // ... (sin cambios)
     return `
       <!DOCTYPE html>
       <html lang="es">
@@ -32,10 +29,7 @@ export class AppService {
     `;
   }
 
-  // --- ⬇️ FUNCIÓN MODIFICADA ⬇️ ---
-
   getAuthSuccessHtml(data: AuthSuccessData): string {
-    // Sanitizamos los datos para mostrarlos en HTML de forma segura
     const safeName = data.fullName
       .replace(/&/g, '&amp;')
       .replace(/</g, '&lt;')
@@ -65,7 +59,7 @@ export class AppService {
         </div>
 
         <p style="font-size: 0.9em; color: #777;">
-          puedes cerrar esta pagina y volver al juego .
+          Puedes cerrar esta pagina y volver al juego.
         </p>
         
         <hr style="width: 50%; border: 0; border-top: 1px solid #eee; margin-top: 30px;">
@@ -77,10 +71,7 @@ export class AppService {
     `;
   }
 
-  // --- ⬆️ FIN DE LA FUNCIÓN MODIFICADA ⬆️ ---
-
   getAuthErrorHtml(errorMessage: string): string {
-    // ... (sin cambios)
     const safeMessage = errorMessage
       .replace(/&/g, '&amp;')
       .replace(/</g, '&lt;')

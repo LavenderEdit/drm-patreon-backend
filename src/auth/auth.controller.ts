@@ -8,13 +8,17 @@ import {
   Query,
   ForbiddenException,
   Logger,
-  NotFoundException,
+  Inject,
+  forwardRef,
+  BadRequestException,
+  UnauthorizedException,
 } from '@nestjs/common';
 import { type FastifyReply, type FastifyRequest } from 'fastify';
 import { randomBytes } from 'crypto';
 import { ConfigService } from '@nestjs/config';
 import { AuthService } from './auth.service';
 import { AppService } from '../app.service';
+import { WsService } from '../ws/ws.service';
 
 @Controller('auth')
 export class AuthController {
@@ -24,28 +28,39 @@ export class AuthController {
     private readonly configService: ConfigService,
     private readonly authService: AuthService,
     private readonly appService: AppService,
+    @Inject(forwardRef(() => WsService))
+    private readonly wsService: WsService,
   ) { }
 
   @Get('patreon/redirect')
   patreonRedirect(
     @Res() reply: FastifyReply,
     @Query('platform') platformQuery: string,
+    @Query('temp_id') temp_id: string,
   ) {
+    if (!temp_id) {
+      throw new BadRequestException('temp_id es requerido');
+    }
+
     const platform = platformQuery === 'mobile' ? 'mobile' : 'desktop';
     const csrfState = randomBytes(16).toString('hex');
-    const cookieData = `${csrfState}:${platform}`;
+
+    const cookieData = `${csrfState}:${platform}:${temp_id}`;
     const clientId = this.configService.get<string>('PATREON_CLIENT_ID');
     const redirectUri = this.configService.get<string>('PATREON_REDIRECT_URI');
+
     this.logger.debug('=== PATREON REDIRECT DEBUG ===');
     this.logger.debug(`clientId: ${clientId}`);
     this.logger.debug(`redirectUri: ${redirectUri}`);
     this.logger.debug(`state (CSRF): ${csrfState}`);
     this.logger.debug(`platform: ${platform}`);
+
     const scope = encodeURIComponent(
       'identity identity[email] identity.memberships',
     );
     const patreonAuthUrl = `https://www.patreon.com/oauth2/authorize?response_type=code&client_id=${clientId}&redirect_uri=${redirectUri}&scope=${scope}&state=${csrfState}`;
     this.logger.debug(`URL de Patreon: ${patreonAuthUrl}`);
+
     try {
       reply
         .setCookie('patreon_oauth_state', cookieData, {
@@ -72,7 +87,7 @@ export class AuthController {
     @Query('code') code: string,
     @Query('state') state: string,
   ) {
-    this.logger.log('=== INICIANDO CALLBACK ===');
+    this.logger.log('=== INICIANDO CALLBACK (PUSH) ===');
 
     if (!code) {
       throw new ForbiddenException('Authorization code is required');
@@ -82,7 +97,7 @@ export class AuthController {
     if (!signedStateCookie) {
       const htmlError = this.appService.getAuthErrorHtml(
         'No se encontró la cookie de estado (CSRF). Su sesión puede haber expirado. Por favor, intente iniciar sesión de nuevo.',
-      ); //
+      );
       reply.type('text/html; charset=utf-8').status(403).send(htmlError);
       return;
     }
@@ -91,12 +106,16 @@ export class AuthController {
     if (!valid) {
       const htmlError = this.appService.getAuthErrorHtml(
         'Cookie de estado inválida. Por favor, intente iniciar sesión de nuevo.',
-      ); //
+      );
       reply.type('text/html; charset=utf-8').status(403).send(htmlError);
       return;
     }
 
-    const [stateFromCookie, platform] = cookieData.split(':');
+    const [stateFromCookie, platform, temp_id] = cookieData.split(':');
+
+    if (!stateFromCookie || !temp_id) {
+      throw new UnauthorizedException('Invalid state cookie structure');
+    }
 
     if (state !== stateFromCookie) {
       this.logger.warn(
@@ -104,13 +123,13 @@ export class AuthController {
       );
       const htmlError = this.appService.getAuthErrorHtml(
         'Estado CSRF inválido. No se pudo verificar la solicitud. Por favor, intente iniciar sesión de nuevo.',
-      ); //
+      );
       reply.type('text/html; charset=utf-8').status(403).send(htmlError);
       return;
     }
 
     this.logger.log(
-      `Validación CSRF exitosa. Plataforma detectada: ${platform}`,
+      `Validación CSRF exitosa. Plataforma: ${platform}, temp_id: ${temp_id}`,
     );
 
     reply.clearCookie('patreon_oauth_state', {
@@ -123,9 +142,16 @@ export class AuthController {
       const { sessionToken, identity, activeTier } =
         await this.authService.handlePatreonCallback(code);
 
+      await this.wsService.pushAuthData(temp_id, {
+        token: sessionToken,
+        email: identity.email,
+        userId: identity.userId,
+        gameLevel: activeTier.title,
+      });
+
       const htmlSuccess = this.appService.getAuthSuccessHtml({
         fullName: identity.fullName,
-        tierTitle: activeTier.title
+        tierTitle: activeTier.title,
       });
 
       reply.type('text/html; charset=utf-8').status(200).send(htmlSuccess);
@@ -139,12 +165,5 @@ export class AuthController {
       const htmlError = this.appService.getAuthErrorHtml(errorMessage);
       reply.type('text/html; charset=utf-8').status(401).send(htmlError);
     }
-  }
-
-  @Post('/api/latest-token')
-  async findJwtTokenByEmail(@Body('email') email: string) {
-    const token = await this.authService.getLastJwtForEmail(email);
-    if (!token) throw new NotFoundException('No hay una sesión para ese correo');
-    return { token };
   }
 }

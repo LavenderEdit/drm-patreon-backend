@@ -6,10 +6,9 @@ import { ConfigService } from '@nestjs/config';
 import { WebSocketWithAuth } from './ws.types';
 
 @Injectable()
-export class WsService implements OnModuleInit, OnModuleDestroy {
+export class WsService implements OnModuleDestroy {
     private wss: WebSocket.Server;
     private readonly logger = new Logger(WsService.name);
-    private readonly connectionMap: Map<WebSocketWithAuth, string> = new Map();
 
     constructor(
         private readonly jwtService: JwtService,
@@ -17,65 +16,33 @@ export class WsService implements OnModuleInit, OnModuleDestroy {
         private readonly configService: ConfigService,
     ) { }
 
-    onModuleInit() {
-        const wsPort = 3001;
-        this.wss = new WebSocket.Server({ port: wsPort });
-        this.logger.log(`WebSocket server iniciado en ws://0.0.0.0:${wsPort}`);
+    public initialize(server: any) {
+        this.logger.log('Adjuntando servidor WebSocket al servidor HTTP...');
+        this.wss = new WebSocket.Server({ server });
 
         this.wss.on('connection', this.handleConnection.bind(this));
-        this.wss.on('error', (error) => this.logger.error('WS Server Error:', error.message));
+        this.wss.on('error', (error) =>
+            this.logger.error('WS Server Error:', error.message),
+        );
+        this.logger.log(`WebSocket server adjuntado exitosamente.`);
     }
 
     onModuleDestroy() {
-        this.wss.close();
-        this.logger.log('WebSocket server cerrado.');
+        if (this.wss) {
+            this.wss.close();
+            this.logger.log('WebSocket server cerrado.');
+        }
     }
 
     private handleConnection(ws: WebSocketWithAuth) {
-        this.logger.log(`Cliente WebSocket conectado (ID: ${ws.url})`);
+        this.logger.log('Nuevo cliente conectado. Esperando registro...');
 
         ws.on('message', (data: WebSocket.RawData) => {
-            if (ws.userId) {
-                this.logger.debug(`Mensaje de ${ws.userId}: ${data.toString()}`);
-                return;
-            }
-
-            try {
-                const message = JSON.parse(data.toString());
-
-                if (message.type === 'auth' && message.token) {
-                    const payload = this.jwtService.verify(message.token);
-
-                    ws.userId = payload.sub;
-                    ws.gameLevel = payload.game_level;
-
-                    this.logger.log(`User autenticado: ${ws.userId} (Level: ${ws.gameLevel})`);
-
-                    this.sessionManager.registerConnection(ws.userId, ws);
-                    this.connectionMap.set(ws, ws.userId);
-
-                    ws.send(JSON.stringify({
-                        type: 'authorization',
-                        status: 'authorized',
-                        access: ws.gameLevel,
-                    }));
-                } else {
-                    this.sendErrorAndClose(ws, 400, 'Authentication required or invalid message format.');
-                }
-            } catch (err) {
-                this.logger.warn(`Error de autenticación: ${err.message}`);
-                this.sendErrorAndClose(ws, 401, 'Unauthorized: Invalid or expired token.');
-            }
+            this.handleMessage(ws, data);
         });
 
         ws.on('close', () => {
-            const userId = this.connectionMap.get(ws);
-            if (userId) {
-                this.sessionManager.removeConnection(userId);
-                this.connectionMap.delete(ws);
-            } else {
-                this.logger.log('Cliente no autenticado desconectado.');
-            }
+            this.handleDisconnect(ws);
         });
 
         ws.on('error', (err) => {
@@ -83,15 +50,73 @@ export class WsService implements OnModuleInit, OnModuleDestroy {
         });
     }
 
-    public sendErrorAndClose(ws: WebSocketWithAuth, code: number, message: string): void {
-        const payload = { type: 'error', code, message };
+    private async handleMessage(ws: WebSocketWithAuth, data: WebSocket.RawData) {
+        let message: { type: string;[key: string]: any };
         try {
-            if (ws.readyState === WebSocket.OPEN) {
-                ws.send(JSON.stringify(payload));
-            }
-        } catch (e) {
-            this.logger.warn(`Error al enviar mensaje de cierre: ${e.message}`);
+            message = JSON.parse(data.toString());
+        } catch (error) {
+            this.logger.warn('Mensaje WS malformado recibido', data.toString());
+            ws.terminate();
+            return;
         }
-        ws.close(1008, message);
+
+        switch (message.type) {
+            case 'register':
+                const temp_id = message.temp_id as string;
+                if (!temp_id || typeof temp_id !== 'string' || temp_id.length < 10) {
+                    this.logger.warn('Registro fallido: temp_id inválido', temp_id);
+                    ws.send(JSON.stringify({ type: 'error', message: 'Invalid temp_id' }));
+                    ws.terminate();
+                    return;
+                }
+
+                this.logger.log(`Cliente registrado con temp_id: ${temp_id}`);
+                this.sessionManager.registerConnection(temp_id, ws);
+                break;
+
+            case 'ping':
+                ws.send(JSON.stringify({ type: 'pong' }));
+                break;
+
+            default:
+                this.logger.warn('Tipo de mensaje WS no reconocido', message.type);
+        }
+    }
+
+    private handleDisconnect(ws: WebSocketWithAuth) {
+        this.logger.log('Cliente desconectado.');
+        this.sessionManager.removeConnection(ws);
+    }
+
+    public async pushAuthData(
+        temp_id: string,
+        payload: {
+            token: string;
+            email: string;
+            userId: string;
+            gameLevel: string;
+        },
+    ) {
+        this.logger.log(
+            `Intentando PUSH de datos de autenticación a temp_id: ${temp_id}`,
+        );
+
+        const ws = this.sessionManager.authenticateAndRemapSession(temp_id, payload);
+
+        if (ws) {
+            const pushPayload = {
+                type: 'auth_data',
+                token: payload.token,
+                email: payload.email,
+            };
+            ws.send(JSON.stringify(pushPayload));
+            this.logger.log(
+                `Éxito: PUSH de auth_data enviado a userId ${payload.userId}`,
+            );
+        } else {
+            this.logger.warn(
+                `Fallo de PUSH: El socket para temp_id ${temp_id} ya no existe.`,
+            );
+        }
     }
 }

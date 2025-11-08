@@ -23,14 +23,6 @@ export class PatreonApiService {
     )!;
     const redirectUri = this.configService.get<string>('PATREON_REDIRECT_URI')!;
 
-    // --- DEPURACIÓN (YA NO ES NECESARIA, PERO PUEDES DEJARLA) ---
-    this.logger.debug('--- VERIFICANDO VARIABLES DE ENTORNO ---');
-    this.logger.debug(`CLIENT_ID:     [${clientId}]`);
-    this.logger.debug(`CLIENT_SECRET: [${clientSecret.substring(0, 5)}...]`);
-    this.logger.debug(`REDIRECT_URI:  [${redirectUri}]`);
-    this.logger.debug('------------------------------------------');
-    // --- FIN DE LA DEPURACIÓN ---
-
     if (!clientId || !clientSecret) {
       throw new Error('Patreon client ID or secret not configured.');
     }
@@ -54,10 +46,6 @@ export class PatreonApiService {
     this.initializeCreatorToken();
   }
 
-  /**
- * Implementación de 4.2: Intercambio de Código por Tokens
- * Usa fetch directo en lugar de patreon-api.ts para evitar ERR_INVALID_URL
- */
   async getTokens(code: string): Promise<Oauth2StoredToken> {
     if (!code || code.trim().length === 0) {
       throw new UnauthorizedException('Authorization code is required');
@@ -136,18 +124,12 @@ export class PatreonApiService {
     }
   }
 
-  /**
-   * Crea una instancia del cliente de usuario con el token proporcionado
-   */
   private createClientInstance(
     token: Oauth2StoredToken,
   ): PatreonUserClientInstance {
     return new PatreonUserClientInstance(this.baseClient, token);
   }
 
-  /**
-   * Implementación de 4.3: Llama a GET /identity
-   */
   async getUserIdentity(token: Oauth2StoredToken) {
     const userClient = this.createClientInstance(token);
 
@@ -183,9 +165,6 @@ export class PatreonApiService {
     }
   }
 
-  /**
-   * Implementación de 4.4: Verificación de Suscripción del Usuario
-   */
   async verifyUserSubscription(
     userId: string,
     refreshToken: string,
@@ -203,9 +182,6 @@ export class PatreonApiService {
     }
   }
 
-  /**
-   * Inicializa el token del creador desde las variables de entorno
-   */
   private initializeCreatorToken() {
     const creatorAccessToken = this.configService.get<string>(
       'PATREON_CREATOR_ACCESS_TOKEN',
@@ -234,9 +210,6 @@ export class PatreonApiService {
     };
   }
 
-  /**
- * Obtiene un cliente de creador válido, refrescando el token si es necesario
- */
   private async getValidCreatorClient(): Promise<PatreonUserClientInstance> {
     const now = new Date();
     const expiresAt = new Date(this.creatorToken.expires_at);
@@ -251,9 +224,6 @@ export class PatreonApiService {
     return new PatreonUserClientInstance(this.baseClient, this.creatorToken);
   }
 
-  /**
-   * Refresca el token del creador usando fetch directo
-   */
   private async refreshCreatorToken(): Promise<void> {
     try {
       const tokenUrl = 'https://www.patreon.com/api/oauth2/token';
@@ -268,8 +238,6 @@ export class PatreonApiService {
         client_id: clientId!,
         client_secret: clientSecret!,
       });
-
-      // this.logger.debug('[refreshCreatorToken] Refrescando token del creador...');
 
       const response = await fetch(tokenUrl, {
         method: 'POST',
@@ -321,9 +289,6 @@ export class PatreonApiService {
     }
   }
 
-  /**
-   * Implementación de 5.3.b: Llama a GET /members/{userId}
-   */
   async checkSubscriptionStatus(userId: string): Promise<boolean> {
     this.logger.log(`[Cron] Checking subscription for user: ${userId}`);
 
@@ -358,9 +323,6 @@ export class PatreonApiService {
     }
   }
 
-  /**
-   * Método de prueba para el cron job (Versión A de TasksService)
-   */
   async handleCronSubscriptionCheck(): Promise<void> {
     this.logger.log(
       '[Cron Job] Iniciando verificación de suscripciones en segundo plano...',

@@ -1,13 +1,15 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { JwtModule } from '@nestjs/jwt';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { PatreonApiModule } from '../patreon-api/patreon-api.module';
 import { AppService } from '../app.service';
+import { WsModule } from '../ws/ws.module';
 
 @Module({
   imports: [
+    forwardRef(() => WsModule),
     PatreonApiModule,
     JwtModule.registerAsync({
       imports: [ConfigModule],
@@ -26,4 +28,4 @@ import { AppService } from '../app.service';
   providers: [AuthService, AppService],
   exports: [JwtModule, AuthService],
 })
-export class AuthModule {}
+export class AuthModule { }
