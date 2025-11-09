@@ -24,37 +24,33 @@ export class AuthService {
   public async handlePatreonCallback(
     code: string,
   ): Promise<HandlePatreonCallbackResult> {
-    this.logger.log('Procesando callback de Patreon (Flujo PUSH)...');
+    this.logger.log('Processing Patreon callback (PUSH Flow)...');
 
     let tokens;
     try {
       tokens = await this.patreonApi.getTokens(code);
-      this.logger.log('Token de acceso obtenido.');
+      this.logger.log('Access token obtained.');
     } catch (error) {
-      this.logger.error(`Fallo al intercambiar el código: ${error.message}`);
-      throw new UnauthorizedException(
-        'No se pudo intercambiar el código de Patreon.',
-      );
+      this.logger.error(`Failed to exchange code: ${error.message}`);
+      throw new UnauthorizedException('Could not exchange Patreon code.');
     }
 
     let identity: any;
     try {
       identity = await this.patreonApi.getUserIdentity(tokens);
-      this.logger.log('Identidad del usuario obtenida.');
+      this.logger.log('User identity obtained.');
     } catch (error) {
-      this.logger.error(`Fallo al obtener la identidad: ${error.message}`);
-      throw new UnauthorizedException(
-        'No se pudo obtener la identidad del usuario.',
-      );
+      this.logger.error(`Failed to get identity: ${error.message}`);
+      throw new UnauthorizedException('Could not fetch user identity.');
     }
 
     const flatIdentity = this.flattenIdentityResponse(identity);
 
     if (flatIdentity.patronStatus !== 'active_patron') {
       this.logger.warn(
-        `Autorización fallida para ${flatIdentity.email} (ID: ${flatIdentity.userId}). Estado: ${flatIdentity.patronStatus}`,
+        `Auth failed for ${flatIdentity.email} (ID: ${flatIdentity.userId}). Status: ${flatIdentity.patronStatus}`,
       );
-      throw new UnauthorizedException('No eres un mecenas activo.');
+      throw new UnauthorizedException('You are not an active patron.');
     }
 
     const allowedTierIdsEnv =
@@ -67,16 +63,16 @@ export class AuthService {
 
     if (!activeTier) {
       this.logger.warn(
-        `Acceso denegado para ${flatIdentity.email} (ID: ${flatIdentity.userId}). Sus tiers [${flatIdentity.tiers.map((t) => t.id).join(', ')}] no están en la lista de permitidos.`,
+        `Access denied for ${flatIdentity.email} (ID: ${flatIdentity.userId}). Tiers [${flatIdentity.tiers.map((t) => t.id).join(', ')}] not in allowed list.`,
       );
       throw new UnauthorizedException(
-        'Tu nivel de mecenas no tiene acceso a este contenido por el momento.',
+        'Your patron tier does not have access to this content at this time.',
       );
     }
 
     const gameAccessLevel = activeTier.title;
     this.logger.log(
-      `Usuario autorizado: ${flatIdentity.email} (ID: ${flatIdentity.userId}) con nivel: ${gameAccessLevel}`,
+      `User authorized: ${flatIdentity.email} (ID: ${flatIdentity.userId}) with level: ${gameAccessLevel}`,
     );
 
     const payload: SessionJwtPayload = {
@@ -85,7 +81,7 @@ export class AuthService {
     };
 
     const sessionToken = this.jwtService.sign(payload);
-    this.logger.log(`JWT generado para usuario ${flatIdentity.userId}`);
+    this.logger.log(`JWT generated for user ${flatIdentity.userId}`);
 
     return { sessionToken, identity: flatIdentity, activeTier };
   }
@@ -122,7 +118,7 @@ export class AuthService {
     };
 
     this.logger.debug(
-      '[flattenIdentityResponse] Objeto aplanado final:',
+      '[flattenIdentityResponse] Flattened object:',
       flatIdentity,
     );
     return flatIdentity;
