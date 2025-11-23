@@ -50,7 +50,7 @@ export class AuthService {
       this.logger.warn(
         `Auth failed for ${flatIdentity.email} (ID: ${flatIdentity.userId}). Status: ${flatIdentity.patronStatus}`,
       );
-      throw new UnauthorizedException('You are not an active patron.');
+      throw new UnauthorizedException('You are not an active patron in any relevant campaign.');
     }
 
     const allowedTierIdsEnv =
@@ -90,37 +90,55 @@ export class AuthService {
     const userData = identity.data;
     const included = identity.included || [];
 
-    const membership = included.find((item: any) => item.type === 'member');
+    const memberships = included.filter((item: any) => item.type === 'member');
 
-    const tiers = (
-      membership?.relationships?.currently_entitled_tiers?.data || []
-    )
-      .map((tierRef: any) => {
-        return included.find(
-          (item: any) => item.type === 'tier' && item.id === tierRef.id,
-        );
-      })
-      .filter(
-        (tier): tier is { id: string; attributes: { title: string } } => !!tier,
-      )
-      .map((tier) => ({
-        id: tier.id,
-        title: tier.attributes.title,
-      }));
+    let allTiers: any[] = [];
+    let globalPatronStatus: string | null = null;
+
+    for (const membership of memberships) {
+      const tierRefs = membership.relationships?.currently_entitled_tiers?.data || [];
+      const memberTiers = tierRefs
+        .map((tierRef: any) => {
+          return included.find(
+            (item: any) => item.type === 'tier' && item.id === tierRef.id,
+          );
+        })
+        .filter((tier: any) => !!tier);
+
+      allTiers = [...allTiers, ...memberTiers];
+
+      const status = membership.attributes?.patron_status;
+      if (status === 'active_patron') {
+        globalPatronStatus = 'active_patron';
+      } else if (!globalPatronStatus && status) {
+        globalPatronStatus = status;
+      }
+    }
+
+    const uniqueTiersMap = new Map();
+    allTiers.forEach((tier) => {
+      if (!uniqueTiersMap.has(tier.id)) {
+        uniqueTiersMap.set(tier.id, {
+          id: tier.id,
+          title: tier.attributes.title,
+        });
+      }
+    });
 
     const flatIdentity: FlatIdentity = {
       userId: userData.id,
       fullName: userData.attributes.full_name,
       email: userData.attributes.email,
-      isMember: !!membership,
-      patronStatus: membership?.attributes?.patron_status || null,
-      tiers: tiers,
+      isMember: memberships.length > 0,
+      patronStatus: globalPatronStatus,
+      tiers: Array.from(uniqueTiersMap.values()),
     };
 
     this.logger.debug(
-      '[flattenIdentityResponse] Flattened object:',
-      flatIdentity,
+      '[flattenIdentityResponse] Flattened object (Multi-membership fix):',
+      JSON.stringify(flatIdentity, null, 2),
     );
+
     return flatIdentity;
   }
 }
